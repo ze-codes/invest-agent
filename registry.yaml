@@ -1,0 +1,225 @@
+- id: net_liq
+  name: Net Liquidity (BS - TGA - RRP)
+  category: core_plumbing
+  series: [WALCL, TGA, RRP]
+  cadence: weekly_daily
+  directionality: higher_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "z20 >= +1 => supportive"
+  duplicates_of:
+  notes: Aggregate measure; avoid pairing with its components.
+
+- id: rrp_delta
+  name: ON RRP 5d Δ
+  category: core_plumbing
+  series: [RRP]
+  cadence: daily
+  directionality: lower_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "Δ <= -100e9 over 5d => supportive"
+  duplicates_of: net_liq
+  notes: Component of net_liq; also related to floor tightness.
+
+- id: tga_delta
+  name: TGA 5d Δ
+  category: core_plumbing
+  series: [TGA]
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "+75e9/5d => draining"
+  duplicates_of: net_liq
+  notes: Component of net_liq; fiscal drain/add.
+
+- id: reserves_w
+  name: Reserve Balances 1w Δ
+  category: core_plumbing
+  series: [RESPPLLOPNWW]
+  cadence: weekly
+  directionality: higher_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "+25e9/w => supportive"
+  duplicates_of: net_liq
+  notes: Bank system liquidity; overlaps with QT pace.
+
+- id: qt_pace
+  name: UST/MBS runoff vs caps
+  category: qt_qe
+  series: [WSHOSHO, WSHOMCB]
+  cadence: weekly
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 1
+  trigger_default: "@cap => headwind"
+  duplicates_of: reserves_w
+  notes: Mechanical drain that often manifests as lower reserves.
+
+- id: sofr_iorb
+  name: SOFR - IORB (bps)
+  category: floor
+  series: [SOFR, IORB]
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 3
+  trigger_default: "> 0 bps persistent => tight"
+  duplicates_of:
+  notes: Canonical floor tightness proxy.
+
+- id: gc_iorb
+  name: GC repo - IORB (bps)
+  category: floor
+  series: []
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 2
+  trigger_default: "> +10–15 bps => tight"
+  duplicates_of: sofr_iorb
+  notes: Optional; license constraints; treat as duplicate of floor concept.
+
+- id: bill_iorb
+  name: 1–3m bill - IORB (bps)
+  category: floor
+  series: [DTB3, DTB4WK, IORB]
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 2
+  trigger_default: "> +25 bps => RRP drain likely"
+  duplicates_of: sofr_iorb
+  notes: Bills competing for cash; same concept bucket as floor tightness.
+
+- id: ust_net_2w
+  name: Net UST cash flow (2–4w)
+  category: supply
+  series: [TREASURY_AUCTIONS]
+  cadence: sched
+  directionality: higher_is_draining
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "> +150e9/2w => drain"
+  duplicates_of:
+  notes: Canonical near-term net Treasury drain/add.
+
+- id: bill_share
+  name: Bill share of issuance (%)
+  category: supply
+  series: [TREASURY_AUCTIONS]
+  cadence: sched
+  directionality: higher_is_supportive
+  scoring: threshold
+  persistence: 1
+  trigger_default: ">= 65% => less drain"
+  duplicates_of: ust_net_2w
+  notes: Modulates drain intensity already reflected in net cash flow.
+
+- id: settle_intensity
+  name: Coupon settlement intensity (weekly $)
+  category: supply
+  series: [TREASURY_AUCTIONS]
+  cadence: sched
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 1
+  trigger_default: "> +80e9/w => watch"
+  duplicates_of: ust_net_2w
+  notes: Timing detail of supply; avoid stacking with net cash flow.
+
+- id: h8_deposits
+  name: H.8 Deposits 1w Δ
+  category: banking
+  series: [H8_DEPOSITS]
+  cadence: weekly
+  directionality: lower_is_draining
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "<= -50e9/w => tight"
+  duplicates_of:
+  notes: Canonical weekly bank funding pressure proxy.
+
+- id: h8_secs
+  name: H.8 Securities 1w Δ
+  category: banking
+  series: [H8_SECURITIES]
+  cadence: weekly
+  directionality: lower_is_draining
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "<= -25e9/w => watch"
+  duplicates_of: h8_deposits
+  notes: Related to bank duration rebalancing; same concept bucket.
+
+- id: ofr_liq_idx
+  name: OFR UST Liquidity Stress Index
+  category: stress
+  series: [OFR_LIQ_IDX]
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 1
+  trigger_default: "> 80th pct => illiquid"
+  duplicates_of:
+  notes: Canonical UST market liquidity stress proxy.
+
+- id: move_idx
+  name: MOVE index
+  category: stress
+  series: [MOVE]
+  cadence: daily
+  directionality: higher_is_draining
+  scoring: threshold
+  persistence: 1
+  trigger_default: "> 120 => headwind"
+  duplicates_of: ofr_liq_idx
+  notes: Correlates with UST liquidity; treat as duplicate of stress concept.
+
+- id: ecb_bs
+  name: ECB balance sheet 1w Δ (local)
+  category: global
+  series: [ECB_ASSETS]
+  cadence: weekly
+  directionality: higher_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "sustained increase => supportive"
+  duplicates_of:
+  notes: Canonical global spillover proxy (local currency direction).
+
+- id: boj_bs
+  name: BoJ balance sheet 1w Δ (local)
+  category: global
+  series: [BOJ_ASSETS]
+  cadence: weekly
+  directionality: higher_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "acceleration => supportive"
+  duplicates_of: ecb_bs
+  notes: Same concept bucket as ECB BS; avoid stacking routinely.
+
+- id: stables_7d
+  name: Stablecoin net issuance (7d)
+  category: crypto
+  series: [DEFI_LLAMA_STABLES]
+  cadence: daily
+  directionality: higher_is_supportive
+  scoring: z
+  z_cutoff: 1.0
+  persistence: 2
+  trigger_default: "+2–5e9/7d => supportive"
+  duplicates_of:
+  notes: Optional; treat as distinct; avoid pairing with highly overlapping core signals in Router.
