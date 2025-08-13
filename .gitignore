@@ -1,5 +1,38 @@
 .DS_Store
 .env
-node_modules
+.env.*
+.vscode/
+.idea/
+.fleet/
+node_modules/
+dist/
+build/
+coverage/
+htmlcov/
+*.coverage
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
 
-.venv
+.venv/
+env/
+venv/
+.python-version
+
+# Docker
+.docker/
+*.tar
+
+# Alembic
+alembic/versions/__pycache__/
+alembic.ini
+
+# Data and secrets (keep small fixtures in repo if needed)
+data/
+secrets/

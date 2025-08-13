@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy
+psycopg[binary]
+alembic
+pydantic-settings
+httpx
+python-dateutil
+pytz
+numpy
+pandas
+
+
