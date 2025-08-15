@@ -13,4 +13,13 @@ rebuild:
 shell:
 	docker compose exec api bash
 
+load-registry:
+	docker compose exec api bash -lc "python -m app.registry_loader registry.yaml"
+
+fetch-core:
+	docker compose exec api bash -lc "python -m app.cli_fetch"
+
+test:
+	pytest -q | cat
+
 

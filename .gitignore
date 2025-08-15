@@ -31,7 +31,6 @@ venv/
 
 # Alembic
 alembic/versions/__pycache__/
-alembic.ini
 
 # Data and secrets (keep small fixtures in repo if needed)
 data/

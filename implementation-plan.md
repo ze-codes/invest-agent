@@ -325,59 +325,64 @@ Response formats follow the product plan examples.
 
 ### Day 1–2
 
-- Initialize repo, Docker, Postgres, Alembic.
-- Implement `indicator_registry` from YAML; migration + loader.
-- Implement `series_vintages` schema and pydantic models.
+- [x] Initialize repo, Docker, Postgres, Alembic.
+- [x] Implement `indicator_registry` from YAML; migration + loader.
+- [x] Implement `series_vintages` schema.
+- [ ] Add pydantic I/O models (if still desired for API schemas).
 
 ### Day 3–4
 
-- FRED/ALFRED adapter with `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `SOFR`, `IORB`, `DTB3`, `DTB4WK`.
-- DTS TGA adapter. Write unit tests for adapters.
+- [x] FRED adapter for `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `SOFR`, `IORB`, `DTB3`, `DTB4WK`.
+- [ ] ALFRED vintage-aware path (optional for MVP).
+- [x] DTS TGA adapter.
+- [x] Unit tests for adapters/parsers.
 
 ### Day 5
 
-- Snapshot scorer: hybrid z + thresholds, label/tilt mapping, bucket aggregation, category weighting.
-- Router selection logic: quotas, de-dup by bucket, marginal-contribution ranking, rationale strings.
-- API stubs for `/snapshot` (`full`, `k`) and `/router` (include `duplicates_note`).
+- [ ] Snapshot scorer: hybrid z + thresholds, label/tilt mapping, bucket aggregation, category weighting.
+- [ ] Router selection logic: quotas, de-dup by bucket, marginal-contribution ranking, rationale strings.
+- [ ] API stubs for `/snapshot` (`full`, `k`) and `/router` (include `duplicates_note`).
 
 ### Day 6
 
-- Implement pollers (daily/weekly/morning). Idempotent writes, retry/backoff.
-- Wire recompute trigger to snapshot pipeline; store `frozen_inputs_id`.
+- [ ] Implement pollers (daily/weekly/morning). Idempotent writes, retry/backoff.
+- [ ] Wire recompute trigger to snapshot pipeline; store `frozen_inputs_id`.
 
 ### Day 7
 
-- Supply calculators: auctions/results → `ust_net_2w`, `bill_share`, `settle_intensity` (basic path; allow manual override table).
-- QT caps table + `qt_pace` calculation (UST/MBS deltas vs caps).
+- [ ] Supply calculators: auctions/results → `ust_net_2w`, `bill_share`, `settle_intensity` (basic path; allow manual override table).
+- [ ] QT caps table + `qt_pace` calculation (UST/MBS deltas vs caps).
 
 ### Day 8
 
-- OFR adapter; optional DefiLlama stub for `stables_7d`.
-- Finish `/snapshot`, `/router`, `/indicators`, `/events/recompute` with auth for admin.
+- [ ] OFR adapter; optional DefiLlama stub for `stables_7d`.
+- [ ] Finish `/snapshot`, `/router`, `/indicators`, `/events/recompute` with auth for admin.
 
 ### Day 9
 
-- Observability: `events_log`, structured logs, p95 timers.
-- Cache recent computations to meet latency targets.
+- [ ] Observability: `events_log`, structured logs, p95 timers.
+- [ ] Cache recent computations to meet latency targets.
 
 ### Day 10–11
 
-- Acceptance tests end-to-end. Fix edge cases (holidays, staleness normalization). Finalize flip-trigger strings.
+- [ ] Acceptance tests end-to-end.
+- [ ] Fix edge cases (holidays, staleness normalization).
+- [ ] Finalize flip-trigger strings.
 
 ### Day 11 (LLM)
 
-- Implement `/brief` orchestrator: tool calls, summarizer prompt, verifier.
-- Implement `/ask` with grounding rules and citations.
-- Cache brief per `snapshot_id`; add banned-words and numeric-fidelity checks in CI.
+- [ ] Implement `/brief` orchestrator: tool calls, summarizer prompt, verifier.
+- [ ] Implement `/ask` with grounding rules and citations.
+- [ ] Cache brief per `snapshot_id`; add banned-words and numeric-fidelity checks in CI.
 
 ### Day 12
 
-- Hardening: error paths, rate limits, request timeouts, graceful shutdown.
+- [ ] Hardening: error paths, rate limits, request timeouts, graceful shutdown.
 
 ### Day 13–14
 
-- Docs: API README, runbook, example snapshot replay.
-- Buffer for integration issues; optional polish on Router “why” strings.
+- [ ] Docs: API README, runbook, example snapshot replay.
+- [ ] Buffer for integration issues; optional polish on Router “why” strings.
 
 ---
 

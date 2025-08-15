@@ -9,5 +9,10 @@ python-dateutil
 pytz
 numpy
 pandas
+PyYAML
+
+pytest
+pytest-asyncio
+respx
 
 
