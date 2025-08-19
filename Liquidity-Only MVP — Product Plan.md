@@ -36,34 +36,7 @@
 
 ### A) Liquidity Indicator Registry
 
-- **Purpose:** Canonical source of truth for indicators; prevents double-counting and standardizes triggers.
-- **Fields:** `id, name, category, formula/series_ids, cadence, directionality, default_trigger, duplicates_of, notes`.
-
-**MVP coverage (US-only)**
-
-| Category        | Indicator (id)                                   | Why it matters                   | Cadence | Trigger (default)            | Priority   |
-| --------------- | ------------------------------------------------ | -------------------------------- | ------- | ---------------------------- | ---------- |
-| Core plumbing   | Net Liquidity = Fed BS − TGA − RRP (`net_liq`)   | Broad beta backdrop              | Wk/D    | 20d z ≥ +1 ⇒ supportive      | **Must**   |
-| Core plumbing   | ON RRP level & 5d/20d Δ (`rrp_delta`)            | Cash leaving MMFs to markets     | D       | Δ ≤ −$100B/5d ⇒ add          | **Must**   |
-| Core plumbing   | TGA level & 5d/20d Δ (`tga_delta`)               | Fiscal drain/add                 | D       | Δ ≥ +$75B/5d ⇒ drain         | **Must**   |
-| Core plumbing   | Reserve balances & 1w Δ (`reserves_w`)           | Bank system liquidity            | Wk      | Δ ≥ +$25B/w ⇒ supportive     | **Must**   |
-| QT/QE           | UST/MBS runoff vs caps (`qt_pace`)               | Mechanical drain                 | Wk      | @cap ⇒ headwind              | **Must**   |
-| Money mkt floor | SOFR − IORB (`sofr_iorb`)                        | Floor tightness                  | D       | > 0 bps persistent ⇒ tight   | **Should** |
-| Repo            | GC repo − IORB (`gc_iorb`)                       | Collateral/funding tightness     | D       | > +10–15 bps ⇒ tight         | **Should** |
-| Bills vs floor  | 1–3m bill − IORB (`bill_iorb`)                   | Bills competing for cash         | D       | > +25 bps ⇒ RRP drain likely | **Should** |
-| Treasury supply | Net UST cash flow 2–4w (`ust_net_2w`)            | Near-term drain/add              | Sched   | > +$150B/2w ⇒ drain          | **Should** |
-| Supply mix      | Bill share of issuance (`bill_share`)            | Bills less draining than coupons | Sched   | ≥ 65% ⇒ less drain           | **Should** |
-| Settlements     | Coupon settlement intensity (`settle_intensity`) | Temporary drains                 | Sched   | > +$80B/w ⇒ watch            | Optional   |
-| Banking         | H.8 deposits 1w Δ (`h8_deposits`)                | Outflows tighten                 | Wk      | ≤ −$50B/w ⇒ tight            | **Should** |
-| Banking         | H.8 securities 1w Δ (`h8_secs`)                  | Duration rebalancing             | Wk      | ≤ −$25B/w ⇒ watch            | Optional   |
-| Stress          | OFR UST Liquidity Stress (`ofr_liq_idx`)         | Depth/spreads in UST             | D       | > 80th pct ⇒ illiquid        | **Should** |
-| Rates vol       | MOVE index (`move_idx`)                          | High rates vol dries liquidity   | D       | > 120 ⇒ headwind             | Optional   |
-| Credit          | HY OAS (`hy_oas`)                                | Risk premium (cash demand)       | D/Wk    | +30 bps/10d ⇒ headwind       | Optional   |
-| Global          | ECB BS 1w Δ (`ecb_bs`)                           | Global spillovers                | Wk      | Sustained ↑ ⇒ supportive     | Optional   |
-| Global          | BoJ BS / JGB buys (`boj_bs`)                     | Carry spillovers                 | Wk      | Acceleration ⇒ supportive    | Optional   |
-| Crypto          | Stablecoin net issuance 7d (`stables_7d`)        | On-chain USD liquidity           | D       | +$2–5B/7d ⇒ supportive       | Optional   |
-
-> Evidence policy: The score is computed from all indicators via concept-bucket aggregation (using `duplicates_of`). The Snapshot displays ≤8 rows (de-duplicated by concept) for clarity. Category quotas still apply.
+To avoid duplication, the complete, up-to-date registry (series, definitions, directionality, triggers, and concept buckets) is maintained in `docs/indicator-registry.md`. Please refer to that document for the catalog and details.
 
 ---
 
@@ -463,12 +436,6 @@ Note: All numbers must be pulled from your snapshot; above is a pattern.
   - Source retries: exponential backoff with jitter (up to ~5 retries, max 30s), timeouts per adapter. Writes are idempotent by `(series_id, observation_date, vintage|publication_date)`.
   - Validation failures: mark indicator neutral (0), set stale reason, and log for investigation.
 
-### What “N-minute” means
-
-It’s just the **update SLO**: _how quickly your app recomputes the Snapshot after the source publishes new data_.
-
-Example: “N=30 minutes for daily series” = within 30 minutes of RRP/TGA posting, your `/snapshot` should refresh (auto), not just when a user clicks.
-
 ### Suggested SLOs (pick defaults)
 
 | Source group                                              | Typical cadence            | Proposed polling window (ET)                  | N-minute target (auto recompute)                                       |
@@ -504,13 +471,9 @@ If you want one number to start with: **N=60 min for daily, N=120 min for weekly
 
 > Tip: for anything you pull from FRED that has revisions, also store the ALFRED vintage you used so you can replay a Snapshot exactly.
 
-### Mini cheat sheet (the “Must” indicators)
+### Indicator reference
 
-- **Net Liquidity (Fed BS − TGA − RRP):** broad backdrop for risk beta.
-- **RRP Δ (5d/20d):** cash leaving money funds → more risk support.
-- **TGA Δ (5d/20d):** Treasury pulling in cash drains liquidity; drawing it down adds.
-- **Reserves Δ (weekly):** more reserves = easier plumbing.
-- **QT pace:** runoff at caps = steady drain headwind.
+For complete, canonical definitions (series, directionality, triggers, buckets), see `docs/indicator-registry.md`. This file no longer duplicates the registry.
 
 ### Minimal implementation next steps
 
@@ -522,35 +485,6 @@ If you want one number to start with: **N=60 min for daily, N=120 min for weekly
 3. **Freeze inputs** on recompute: store `{series_id, published_at, fetched_at, value}` per indicator + a `frozen_inputs_id`.
 4. **Router/Snapshot**: score the latest values, enforce de-duplication, emit flip triggers, surface provenance.
 
-### Starter registry (trimmed example)
+### Starter registry
 
-```yaml
-- id: net_liq
-  name: Net Liquidity (BS - TGA - RRP)
-  category: core_plumbing
-  series: [WALCL, TGA, RRP]
-  cadence: weekly_daily
-  directionality: higher_is_supportive
-  trigger_default: "z20 >= +1 => supportive"
-- id: rrp_delta
-  name: ON RRP 5d Δ
-  category: core_plumbing
-  series: [RRP]
-  cadence: daily
-  directionality: lower_is_supportive
-  trigger_default: "Δ <= -100e9 over 5d => supportive"
-- id: tga_delta
-  name: TGA 5d Δ
-  category: core_plumbing
-  series: [TGA]
-  cadence: daily
-  directionality: higher_is_draining
-  trigger_default: "Δ >= +75e9 over 5d => draining"
-- id: reserves_w
-  name: Reserve Balances 1w Δ
-  category: core_plumbing
-  series: [RESPPLLOPNWW]
-  cadence: weekly
-  directionality: higher_is_supportive
-  trigger_default: "Δ >= +25e9/w => supportive"
-```
+The registry is maintained in one place: `registry.yaml`. Refer to that file for the live list.

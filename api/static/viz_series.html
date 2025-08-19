@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Series Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        margin: 16px;
+      }
+      #controls {
+        margin-bottom: 12px;
+      }
+      #chart {
+        width: 100%;
+        height: 80vh;
+      }
+      input[type="text"] {
+        width: 560px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Series Visualization</h2>
+    <div id="controls">
+      <form id="form">
+        <label>Series IDs (comma-separated):</label>
+        <input type="text" id="ids" value="" />
+        <label>as_of (optional ISO8601):</label>
+        <input type="text" id="asof" value="" />
+        <label>limit:</label>
+        <input type="number" id="limit" value="1000" min="10" max="5000" />
+        <button type="submit">Load</button>
+      </form>
+    </div>
+    <div id="chart"></div>
+    <h3>Indicator details</h3>
+    <div id="ind_details"></div>
+    <h3>Series details</h3>
+    <div id="details"></div>
+    <h3>Docs explainer</h3>
+    <div id="series_docs"></div>
+    <script>
+      function getQueryParam(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+      }
+
+      function getDefaultIds() {
+        const override = getQueryParam("ids");
+        if (override) return override;
+        return "WALCL,RESPPLLOPNWW,RRPONTSYD,TGA,SOFR,IORB,DTB3,DTB4WK";
+      }
+
+      function getDefaultAsOf() {
+        return getQueryParam("as_of") || "";
+      }
+
+      function getDefaultLimit() {
+        return parseInt(getQueryParam("limit") || "1000");
+      }
+
+      document.getElementById("ids").value = getDefaultIds();
+      document.getElementById("asof").value = getDefaultAsOf();
+      document.getElementById("limit").value = String(getDefaultLimit());
+
+      async function fetchSeries(id, asof, limit) {
+        const q = asof
+          ? "?limit=" + String(limit) + "&as_of=" + encodeURIComponent(asof)
+          : "?limit=" + String(limit);
+        const r = await fetch("/series/" + encodeURIComponent(id) + q);
+        if (!r.ok) throw new Error("Failed to fetch " + id);
+        return r.json();
+      }
+
+      async function load(idsCsv, asof, limit) {
+        const ids = idsCsv
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const traces = [];
+        const detailRows = [];
+        for (const id of ids) {
+          try {
+            const js = await fetchSeries(id, asof, limit);
+            const x = js.points.map((p) => p.observation_date);
+            const y = js.points.map(
+              (p) => (p.value_numeric || 0) * (p.scale || 1)
+            );
+            const units = (
+              (js.points[0] && js.points[0].units) ||
+              ""
+            ).toLowerCase();
+            const isPct =
+              units.includes("percent") ||
+              id.toLowerCase().includes("pct") ||
+              id.toLowerCase().includes("share");
+            traces.push({
+              x: x,
+              y: y,
+              mode: "lines",
+              name: id,
+              yaxis: isPct ? "y2" : "y",
+            });
+            const last = js.points[js.points.length - 1] || {};
+            const latestVal = (last.value_numeric || 0) * (last.scale || 1);
+            detailRows.push(
+              "<tr>" +
+                "<td><code>" +
+                id +
+                "</code></td>" +
+                "<td>" +
+                (last.observation_date || "") +
+                "</td>" +
+                "<td>" +
+                (latestVal?.toLocaleString?.() || latestVal) +
+                "</td>" +
+                "<td>" +
+                (last.units || "") +
+                "</td>" +
+                "<td>" +
+                (last.source || "") +
+                "</td>" +
+                "</tr>"
+            );
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        const layout = {
+          title: ids.join(", "),
+          xaxis: { type: "date" },
+          yaxis: { rangemode: "tozero", title: "Value" },
+          yaxis2: {
+            rangemode: "tozero",
+            overlaying: "y",
+            side: "right",
+            title: "Percent",
+            ticksuffix: "%",
+          },
+          legend: { orientation: "h" },
+        };
+        Plotly.newPlot("chart", traces, layout, { responsive: true });
+        document.getElementById("details").innerHTML =
+          '<table border="1" cellpadding="6" cellspacing="0">' +
+          "<thead>" +
+          "<tr>" +
+          "<th>series_id</th>" +
+          "<th>latest_date</th>" +
+          "<th>latest_value (scaled)</th>" +
+          "<th>units</th>" +
+          "<th>source</th>" +
+          "</tr>" +
+          "</thead>" +
+          "<tbody>" +
+          detailRows.join("") +
+          "</tbody>" +
+          "</table>";
+        let docs = { series: {} };
+        try {
+          const qs = encodeURIComponent(ids.join(","));
+          docs = await fetch("/docs/registry_explainer?series=" + qs).then(
+            (r) => r.json()
+          );
+        } catch (e) {
+          console.warn("series docs fetch failed", e);
+        }
+        const docBlocks = ids
+          .map(function (id) {
+            const d = (docs.series && docs.series[id]) || {};
+            if (!d.title && !d.what && !d.impact && !d.interpretation)
+              return "";
+            return (
+              '<div style="margin:12px 0;">' +
+              "<h4><code>" +
+              id +
+              "</code> — " +
+              (d.title || "") +
+              "</h4>" +
+              (d.what
+                ? "<div><strong>What it is:</strong> " + d.what + "</div>"
+                : "") +
+              (d.impact
+                ? "<div><strong>Impact:</strong> " + d.impact + "</div>"
+                : "") +
+              (d.interpretation
+                ? "<div><strong>Interpretation:</strong> " +
+                  d.interpretation +
+                  "</div>"
+                : "") +
+              "</div>"
+            );
+          })
+          .join("");
+        const seriesDocsHost = document.getElementById("series_docs");
+        if (seriesDocsHost) {
+          seriesDocsHost.innerHTML = docBlocks;
+        }
+      }
+
+      document.getElementById("form").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        const ids = document.getElementById("ids").value;
+        const asof = document.getElementById("asof").value;
+        const limit = parseInt(document.getElementById("limit").value) || 1000;
+        load(ids, asof, limit);
+      });
+
+      // initial load
+      load(
+        document.getElementById("ids").value,
+        document.getElementById("asof").value,
+        parseInt(document.getElementById("limit").value) || 1000
+      );
+    </script>
+  </body>
+</html>

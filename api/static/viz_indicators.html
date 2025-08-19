@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Indicator Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        margin: 16px;
+      }
+      #controls {
+        margin-bottom: 12px;
+      }
+      #chart {
+        width: 100%;
+        height: 80vh;
+      }
+      input[type="text"] {
+        width: 560px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Indicator Visualization</h2>
+    <div id="controls">
+      <form id="form">
+        <label>Indicator IDs (comma-separated):</label>
+        <input type="text" id="ids" value="" />
+        <label>horizon:</label>
+        <input type="text" id="horizon" value="1w" />
+        <label>days:</label>
+        <input type="number" id="days" value="180" min="7" max="2000" />
+        <button type="submit">Load</button>
+      </form>
+    </div>
+    <div id="chart"></div>
+    <h3>Indicator details</h3>
+    <div id="ind_details"></div>
+    <h3>Docs</h3>
+    <div id="ind_docs"></div>
+    <script>
+      function getQueryParam(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+      }
+
+      function getDefaultIds() {
+        const override = getQueryParam("ids");
+        if (override) return override;
+        return "net_liq,reserves_w,tga_delta,rrp_delta,bill_rrp,ofr_liq_idx";
+      }
+
+      function getDefaultHorizon() {
+        return getQueryParam("horizon") || "1w";
+      }
+
+      function getDefaultDays() {
+        return parseInt(getQueryParam("days") || "180");
+      }
+
+      document.getElementById("ids").value = getDefaultIds();
+      document.getElementById("horizon").value = getDefaultHorizon();
+      document.getElementById("days").value = String(getDefaultDays());
+
+      async function fetchIndicator(id, horizon, days) {
+        const url =
+          "/indicators/" +
+          encodeURIComponent(id) +
+          "/history?horizon=" +
+          encodeURIComponent(horizon) +
+          "&days=" +
+          String(days);
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("Failed to fetch " + id + " history");
+        return r.json();
+      }
+
+      function statusNum(s) {
+        if (s === "+1") return 1;
+        if (s === "-1") return -1;
+        return 0;
+      }
+
+      async function load(idsCsv, horizon, days) {
+        const ids = idsCsv
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const traces = [];
+        const reg = await fetch("/indicators").then((r) => r.json());
+        const regById = Object.fromEntries(reg.map((r) => [r.id, r]));
+        const detailRows = [];
+        let docs = { indicators: {} };
+        try {
+          const qs = encodeURIComponent(ids.join(","));
+          docs = await fetch("/docs/registry_explainer?indicators=" + qs).then(
+            (r) => r.json()
+          );
+        } catch (e) {
+          console.warn("docs fetch failed", e);
+        }
+        for (const id of ids) {
+          try {
+            const js = await fetchIndicator(id, horizon, days);
+            const x = js.items.map((p) => p.as_of);
+            const val = js.items.map((p) => p.value_numeric);
+            const status = js.items.map((p) => statusNum(p.status));
+            traces.push({ x: x, y: val, mode: "lines", name: id, yaxis: "y" });
+            traces.push({
+              x: x,
+              y: status,
+              mode: "lines",
+              name: id + " (status)",
+              yaxis: "y2",
+              line: { dash: "dot" },
+            });
+            const latest = js.items[js.items.length - 1] || {};
+            const meta = regById[id] || {};
+            detailRows.push(
+              "<tr>" +
+                "<td><code>" +
+                id +
+                "</code></td>" +
+                "<td>" +
+                (meta.name || "") +
+                "</td>" +
+                "<td>" +
+                (meta.category || "") +
+                "</td>" +
+                "<td>" +
+                (meta.directionality || "") +
+                "</td>" +
+                "<td>" +
+                (meta.scoring || "") +
+                "</td>" +
+                "<td>" +
+                (meta.trigger_default || "") +
+                "</td>" +
+                "<td>" +
+                ((latest.value_numeric ?? "").toLocaleString?.() ||
+                  (latest.value_numeric ?? "")) +
+                "</td>" +
+                "<td>" +
+                (latest.status || "") +
+                "</td>" +
+                "</tr>"
+            );
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        const layout = {
+          title: ids.join(", "),
+          xaxis: { type: "date" },
+          yaxis: { rangemode: "tozero", title: "value_numeric" },
+          yaxis2: {
+            rangemode: "tozero",
+            overlaying: "y",
+            side: "right",
+            title: "status (-1..+1)",
+          },
+          legend: { orientation: "h" },
+        };
+        Plotly.newPlot("chart", traces, layout, { responsive: true });
+        document.getElementById("ind_details").innerHTML =
+          '<table border="1" cellpadding="6" cellspacing="0">' +
+          "<thead><tr>" +
+          "<th>indicator_id</th><th>name</th><th>category</th><th>directionality</th><th>scoring</th><th>trigger</th><th>latest_value</th><th>latest_status</th>" +
+          "</tr></thead><tbody>" +
+          detailRows.join("") +
+          "</tbody></table>";
+        const docBlocks = ids
+          .map(function (id) {
+            const d = (docs.indicators && docs.indicators[id]) || {};
+            if (!d.title && !d.why) return "";
+            return (
+              '<div style="margin:12px 0;">' +
+              "<h4><code>" +
+              id +
+              "</code> — " +
+              (d.title || "") +
+              "</h4>" +
+              (d.why
+                ? "<div><strong>Why it matters:</strong> " + d.why + "</div>"
+                : "") +
+              (d.trigger
+                ? "<div><strong>Trigger:</strong> " + d.trigger + "</div>"
+                : "") +
+              (d.directionality
+                ? "<div><strong>Directionality:</strong> " +
+                  d.directionality +
+                  "</div>"
+                : "") +
+              "</div>"
+            );
+          })
+          .join("");
+        const docsHost = document.getElementById("ind_docs");
+        docsHost.innerHTML = docBlocks;
+      }
+
+      document.getElementById("form").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        const ids = document.getElementById("ids").value;
+        const h = document.getElementById("horizon").value || "1w";
+        const d = parseInt(document.getElementById("days").value) || 180;
+        load(ids, h, d);
+      });
+
+      load(
+        document.getElementById("ids").value,
+        document.getElementById("horizon").value,
+        parseInt(document.getElementById("days").value) || 180
+      );
+    </script>
+  </body>
+</html>

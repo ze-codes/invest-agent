@@ -136,20 +136,32 @@ Migration tool: Alembic.
 ### FRED/ALFRED
 
 - Endpoints: FRED/ALFRED JSON; require API key. Use ALFRED for vintage-aware series.
-- Series: `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `IORB`, `SOFR`, `DTB3`, `DTB4WK`.
+- Series: `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `RRP_RATE`, `IORB`, `SOFR`, `DTB3`, `DTB4WK`.
+- Extensions (DONE): `WSHOSHO`, `WSHOMCB` (QT/QE components for `qt_pace`).
 - Transform: parse value, normalize to USD dollars if series is in millions (`scale=1e6`).
 - Provenance: store `vintage_date` (ALFRED `realtime_start`), `observation_date`, `fetched_at`.
 
 ### Treasury Fiscal Data (DTS)
 
 - TGA: Operating Cash Balance. Fields `record_date`, `publication_date`, `close_today_bal`.
-- Auctions/Results: issuance totals by security type with `issue_date/settlement_date`. Compute `ust_net_2w`, `bill_share`, `settle_intensity`.
+- Auctions (DONE baseline): using `auctions_query` with fields `auction_date`, `issue_date`, `security_type`, `security_term`, `offering_amt`. We aggregate to two raw series: `UST_AUCTION_OFFERINGS` (by auction date) and `UST_AUCTION_ISSUES` (by issue date proxy).
 - Provenance: use `publication_date` (date) and `fetched_at`.
+
+- Redemptions (DONE): public debt cash redemptions/maturities. Daily series `UST_REDEMPTIONS` from DTS Public Debt Transactions (sums `transaction_today_amt` where `transaction_type = "Redemptions"`).
+- Interest (DONE): coupon/interest outlays. Daily series `UST_INTEREST` from DTS Deposits and Withdrawals of Operating Cash (Withdrawals where transaction category starts with “Interest on Treasury…”; prefer Gross when present).
+  - Notes: Buybacks support is optional and can be added later when a reliable dataset is integrated.
 
 ### OFR / DefiLlama
 
-- OFR Liquidity Stress Index: daily CSV/JSON; store value and compute percentile for trigger.
+- OFR Liquidity Stress Index (DONE): daily CSV (`fsi.csv`); ingested as `OFR_LIQ_IDX` with units `index`. Percentile trigger ("> 80th pct") to be wired in scoring.
 - Stablecoins (DefiLlama): sum circulation; compute 7d net change.
+
+### Fed facilities / H.4.1
+
+- Standing Repo Facility usage (NEW): daily take-up ingested as `SRF_USAGE`.
+- FIMA repo usage (NEW): daily usage ingested as `FIMA_REPO`.
+- Discount window primary credit (NEW): weekly outstanding ingested as `DISCOUNT_WINDOW`.
+  - Source: Board of Governors H.4.1 tables / FRBNY operations releases as applicable; persist `publication_date` and `fetched_at`.
 
 ---
 
@@ -166,6 +178,12 @@ Migration tool: Alembic.
 
 - Flow-like indicators (deltas/spreads): use z-based rule with default cutoffs |z| ≥ 1 → ±1, else 0; apply directionality and optional persistence (e.g., require 2 consecutive observations beyond cutoff).
 - Mechanical/admin indicators (QT caps, floor persistence, bill_share): use deterministic thresholds and optional persistence windows.
+  - Implemented: `sofr_iorb` (> 0 bps persistent N days), generic single‑series thresholds.
+  - Implemented: `bill_rrp` via derived `BILL_RRP_BPS` (min(DTB3, DTB4WK) − `RRP_RATE`) in bps; apply > +25 bps persistent N days; `bill_iorb` remains `duplicates_of: bill_rrp`.
+    - Backstops: `srf_usage` (> 0 persistent), `fima_repo` (> 0 persistent), `discount_window` (> 0) under floor tightness bucket.
+    - Supply mods: `bill_share` (≥ 65%).
+    - QT: `qt_pace` (@cap) once `qt_caps` available.
+    - Stress: `ofr_liq_idx` (> 80th pct).
 - Always display both z and the active threshold when available; if z is suppressed (low variance/short history), mark as "threshold-backstop" in provenance.
 
 ### Concept buckets and aggregation
@@ -192,6 +210,14 @@ Migration tool: Alembic.
 ### De-duplication policy
 
 - Use `duplicates_of` graph in registry. Selection keeps one representative per concept; Router includes note on resolution choice.
+
+### Missing-data handling (added)
+
+- Indicators with no underlying series points at compute time are treated as not available.
+- Behavior:
+  - Internally marked as `status = "n/a"` (no `value_numeric`, `z20`, or `window`).
+  - Excluded from `/snapshot` evidence and `/router` picks to avoid misleading zeros.
+  - This rule applies per indicator (e.g., `boj_bs` is omitted if `BOJ_ASSETS` has no data).
 
 ### Flip triggers
 
@@ -238,9 +264,9 @@ Migration tool: Alembic.
 
 ### Schedules (ET)
 
-- Daily pollers (every 15 min between 3–7 pm ET): RRP, TGA, SOFR/EFFR, bills, OFR.
-- Weekly pollers: Thu 3–6 pm ET (H.4.1 reserves/QT), Fri 3–6 pm ET (H.8).
-- Morning job 7:30–8:30 am ET: ingest auction/settlement schedules; precompute 2–4w net cash flow.
+- Daily pollers (every 15 min between 3–7 pm ET): RRP, RRP_RATE, TGA, SOFR/EFFR, bills, OFR, SRF/FIMA usage.
+- Weekly pollers: Thu 3–6 pm ET (H.4.1 reserves/QT and discount window), Fri 3–6 pm ET (H.8).
+- Morning job 7:30–8:30 am ET: ingest auction/settlement schedules plus redemptions/interest; precompute 2–4w net cash flow.
 
 ### Triggers
 
@@ -264,6 +290,19 @@ Migration tool: Alembic.
 - Versioning: add `X-App-Version` header and `/version` endpoint
 
 Response formats follow the product plan examples.
+
+### Data presence checklist (current vs TODO)
+
+- Present (ingested): `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `TGA`, `SOFR`, `IORB`, `DTB3`, `DTB4WK`, `WSHOSHO`, `WSHOMCB`, `OFR_LIQ_IDX`, `UST_AUCTION_OFFERINGS`, `UST_AUCTION_ISSUES`, `UST_REDEMPTIONS`, `UST_INTEREST`.
+- Missing (plan to ingest):
+  - Admin rate: `RRP_RATE` (DONE).
+  - Facilities/backstops: `SRF_USAGE`, `FIMA_REPO`, `DISCOUNT_WINDOW`.
+  - Optional later: buybacks dataset for netting; `MOVE`, `ECB_ASSETS`, `BOJ_ASSETS`.
+
+### API behavior updates (added)
+
+- `/snapshot` and `/router` exclude indicators that lack series data (no points). This prevents rows like `value_numeric: 0` for unavailable inputs.
+- `/snapshot` returns a `buckets` array with concept-bucket aggregates and members. Representatives are chosen as the member with the largest absolute z-score within each bucket, then globally limited to `k` by |z|.
 
 ---
 
@@ -298,6 +337,12 @@ Response formats follow the product plan examples.
 7. Latency: p95 < 2s warm, < 5s cold with caching of recent computations.
 8. LLM: brief ≤ ~180 words; numeric claims match snapshot; banned-words check; includes top-3 |z|; detects sign flips.
 
+### Added tests (implemented)
+
+- Exclusion of missing-data indicators: ensure `/snapshot` and `/router` omit indicators whose underlying series have no points; only populated indicators appear (see `tests/test_exclude_missing_data.py`).
+- DTS parsers: `tests/test_treasury_interest_parser.py`, `tests/test_treasury_redemptions_parser.py`.
+- Weekly net settlements: `tests/test_supply_weekly_net_settlements.py`.
+
 ### Config defaults (operational)
 
 - Timezone: America/New_York (ET); business-day calendar = Fed holidays.
@@ -321,70 +366,9 @@ Response formats follow the product plan examples.
 
 ---
 
-## Execution timeline (2 weeks)
+## Execution timeline
 
-### Day 1–2
-
-- [x] Initialize repo, Docker, Postgres, Alembic.
-- [x] Implement `indicator_registry` from YAML; migration + loader.
-- [x] Implement `series_vintages` schema.
-- [ ] Add pydantic I/O models (if still desired for API schemas).
-
-### Day 3–4
-
-- [x] FRED adapter for `WALCL`, `RESPPLLOPNWW`, `RRPONTSYD`, `SOFR`, `IORB`, `DTB3`, `DTB4WK`.
-- [ ] ALFRED vintage-aware path (optional for MVP).
-- [x] DTS TGA adapter.
-- [x] Unit tests for adapters/parsers.
-
-### Day 5
-
-- [ ] Snapshot scorer: hybrid z + thresholds, label/tilt mapping, bucket aggregation, category weighting.
-- [ ] Router selection logic: quotas, de-dup by bucket, marginal-contribution ranking, rationale strings.
-- [ ] API stubs for `/snapshot` (`full`, `k`) and `/router` (include `duplicates_note`).
-
-### Day 6
-
-- [ ] Implement pollers (daily/weekly/morning). Idempotent writes, retry/backoff.
-- [ ] Wire recompute trigger to snapshot pipeline; store `frozen_inputs_id`.
-
-### Day 7
-
-- [ ] Supply calculators: auctions/results → `ust_net_2w`, `bill_share`, `settle_intensity` (basic path; allow manual override table).
-- [ ] QT caps table + `qt_pace` calculation (UST/MBS deltas vs caps).
-
-### Day 8
-
-- [ ] OFR adapter; optional DefiLlama stub for `stables_7d`.
-- [ ] Finish `/snapshot`, `/router`, `/indicators`, `/events/recompute` with auth for admin.
-
-### Day 9
-
-- [ ] Observability: `events_log`, structured logs, p95 timers.
-- [ ] Cache recent computations to meet latency targets.
-
-### Day 10–11
-
-- [ ] Acceptance tests end-to-end.
-- [ ] Fix edge cases (holidays, staleness normalization).
-- [ ] Finalize flip-trigger strings.
-
-### Day 11 (LLM)
-
-- [ ] Implement `/brief` orchestrator: tool calls, summarizer prompt, verifier.
-- [ ] Implement `/ask` with grounding rules and citations.
-- [ ] Cache brief per `snapshot_id`; add banned-words and numeric-fidelity checks in CI.
-
-### Day 12
-
-- [ ] Hardening: error paths, rate limits, request timeouts, graceful shutdown.
-
-### Day 13–14
-
-- [ ] Docs: API README, runbook, example snapshot replay.
-- [ ] Buffer for integration issues; optional polish on Router “why” strings.
-
----
+See `timeline_v2.md` for the current LLM‑first plan. The original two‑week plan is preserved in `archive_timeline.md` for reference.
 
 ## Risks & mitigations
 

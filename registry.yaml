@@ -1,5 +1,5 @@
 - id: net_liq
-  name: Net Liquidity (BS - TGA - RRP)
+  name: Net Liquidity (WALCL - TGA - RRP)
   category: core_plumbing
   series: [WALCL, TGA, RRP]
   cadence: weekly_daily
@@ -74,92 +74,121 @@
   duplicates_of:
   notes: Canonical floor tightness proxy.
 
-- id: gc_iorb
-  name: GC repo - IORB (bps)
-  category: floor
-  series: []
-  cadence: daily
-  directionality: higher_is_draining
-  scoring: threshold
-  persistence: 2
-  trigger_default: "> +10–15 bps => tight"
-  duplicates_of: sofr_iorb
-  notes: Optional; license constraints; treat as duplicate of floor concept.
-
 - id: bill_iorb
   name: 1–3m bill - IORB (bps)
   category: floor
   series: [DTB3, DTB4WK, IORB]
   cadence: daily
-  directionality: higher_is_draining
+  directionality: higher_is_supportive
   scoring: threshold
   persistence: 2
   trigger_default: "> +25 bps => RRP drain likely"
-  duplicates_of: sofr_iorb
+  duplicates_of: bill_rrp
   notes: Bills competing for cash; same concept bucket as floor tightness.
 
-- id: ust_net_2w
-  name: Net UST cash flow (2–4w)
+# New root floor spread anchored on the RRP admin rate (MMF arbitrage anchor)
+- id: bill_rrp
+  name: 1–3m bill - RRP (bps)
+  category: floor
+  series: [BILL_RRP_BPS]
+  cadence: daily
+  directionality: higher_is_supportive
+  scoring: threshold
+  persistence: 2
+  trigger_default: "> +25 bps => RRP drain likely"
+  duplicates_of:
+  notes: Preferred floor anchor; MMFs arbitrage vs RRP. bill_iorb duplicates this.
+
+- id: ust_net_w
+  name: Net UST settlements (weekly)
   category: supply
-  series: [TREASURY_AUCTIONS]
-  cadence: sched
+  series: [UST_NET_SETTLE_W]
+  cadence: weekly
   directionality: higher_is_draining
   scoring: z
   z_cutoff: 1.0
   persistence: 2
-  trigger_default: "> +150e9/2w => drain"
+  trigger_default: "> +80–100e9/w => drain"
   duplicates_of:
-  notes: Canonical near-term net Treasury drain/add.
+  notes: Weekly net cash call = Issues − Redemptions − Interest by settlement week.
 
 - id: bill_share
   name: Bill share of issuance (%)
   category: supply
-  series: [TREASURY_AUCTIONS]
+  series: [UST_AUCTION_OFFERINGS]
   cadence: sched
   directionality: higher_is_supportive
   scoring: threshold
   persistence: 1
   trigger_default: ">= 65% => less drain"
-  duplicates_of: ust_net_2w
+  duplicates_of: ust_net_w
   notes: Modulates drain intensity already reflected in net cash flow.
 
 - id: settle_intensity
   name: Coupon settlement intensity (weekly $)
   category: supply
-  series: [TREASURY_AUCTIONS]
+  series: [UST_AUCTION_ISSUES]
   cadence: sched
   directionality: higher_is_draining
   scoring: threshold
   persistence: 1
   trigger_default: "> +80e9/w => watch"
-  duplicates_of: ust_net_2w
+  duplicates_of: ust_net_w
   notes: Timing detail of supply; avoid stacking with net cash flow.
 
-- id: h8_deposits
-  name: H.8 Deposits 1w Δ
-  category: banking
-  series: [H8_DEPOSITS]
-  cadence: weekly
-  directionality: lower_is_draining
+# New supportive flows (raw components)
+- id: ust_redemptions
+  name: Treasury redemptions (daily)
+  category: supply
+  series: [UST_REDEMPTIONS]
+  cadence: daily
+  directionality: higher_is_supportive
   scoring: z
   z_cutoff: 1.0
-  persistence: 2
-  trigger_default: "<= -50e9/w => tight"
-  duplicates_of:
-  notes: Canonical weekly bank funding pressure proxy.
+  persistence: 1
+  trigger_default: "higher daily redemptions => supportive"
+  duplicates_of: ust_net_w
+  notes: Public debt cash redemptions from DTS.
 
-- id: h8_secs
-  name: H.8 Securities 1w Δ
-  category: banking
-  series: [H8_SECURITIES]
-  cadence: weekly
-  directionality: lower_is_draining
+- id: ust_interest
+  name: Treasury interest/coupon outlays (daily)
+  category: supply
+  series: [UST_INTEREST]
+  cadence: daily
+  directionality: higher_is_supportive
   scoring: z
   z_cutoff: 1.0
-  persistence: 2
-  trigger_default: "<= -25e9/w => watch"
-  duplicates_of: h8_deposits
-  notes: Related to bank duration rebalancing; same concept bucket.
+  persistence: 1
+  trigger_default: "higher coupon/interest outlays => supportive"
+  duplicates_of: ust_net_w
+  notes: Interest on Treasury securities; reduces TGA, injects cash.
+
+### Deferred (post‑MVP) — Banking (H.8)
+# - id: h8_deposits
+#   name: H.8 Deposits 1w Δ
+#   category: banking
+#   series: [H8_DEPOSITS]
+#   cadence: weekly
+#   directionality: lower_is_draining
+#   scoring: z
+#   z_cutoff: 1.0
+#   persistence: 2
+#   trigger_default: "<= -50e9/w => tight"
+#   duplicates_of:
+#   notes: Deferred to reduce scope for MVP.
+
+# - id: h8_secs
+#   name: H.8 Securities 1w Δ
+#   category: banking
+#   series: [H8_SECURITIES]
+#   cadence: weekly
+#   directionality: lower_is_draining
+#   scoring: z
+#   z_cutoff: 1.0
+#   persistence: 2
+#   trigger_default: "<= -25e9/w => watch"
+#   duplicates_of: h8_deposits
+#   notes: Deferred post‑MVP.
 
 - id: ofr_liq_idx
   name: OFR UST Liquidity Stress Index
@@ -172,54 +201,93 @@
   trigger_default: "> 80th pct => illiquid"
   duplicates_of:
   notes: Canonical UST market liquidity stress proxy.
+### Deferred (post‑MVP) — Floor backstops
+# - id: srf_usage
+#   name: Standing Repo Facility usage (daily)
+#   category: floor
+#   series: [SRF_USAGE]
+#   cadence: daily
+#   directionality: higher_is_draining
+#   scoring: threshold
+#   persistence: 2
+#   trigger_default: "> 0 persistent => tight"
+#   duplicates_of: sofr_iorb
+#   notes: Deferred; usage near zero most days.
 
-- id: move_idx
-  name: MOVE index
-  category: stress
-  series: [MOVE]
-  cadence: daily
-  directionality: higher_is_draining
-  scoring: threshold
-  persistence: 1
-  trigger_default: "> 120 => headwind"
-  duplicates_of: ofr_liq_idx
-  notes: Correlates with UST liquidity; treat as duplicate of stress concept.
+# - id: fima_repo
+#   name: FIMA repo usage (daily)
+#   category: floor
+#   series: [FIMA_REPO]
+#   cadence: daily
+#   directionality: higher_is_draining
+#   scoring: threshold
+#   persistence: 2
+#   trigger_default: "> 0 persistent => tight"
+#   duplicates_of: sofr_iorb
+#   notes: Deferred pending stable public source.
 
-- id: ecb_bs
-  name: ECB balance sheet 1w Δ (local)
-  category: global
-  series: [ECB_ASSETS]
-  cadence: weekly
-  directionality: higher_is_supportive
-  scoring: z
-  z_cutoff: 1.0
-  persistence: 2
-  trigger_default: "sustained increase => supportive"
-  duplicates_of:
-  notes: Canonical global spillover proxy (local currency direction).
+# - id: discount_window
+#   name: Discount window primary credit
+#   category: floor
+#   series: [DISCOUNT_WINDOW]
+#   cadence: weekly
+#   directionality: higher_is_draining
+#   scoring: threshold
+#   persistence: 1
+#   trigger_default: "> 0 => stress"
+#   duplicates_of: sofr_iorb
+#   notes: Optional backstop; deferred post‑MVP.
 
-- id: boj_bs
-  name: BoJ balance sheet 1w Δ (local)
-  category: global
-  series: [BOJ_ASSETS]
-  cadence: weekly
-  directionality: higher_is_supportive
-  scoring: z
-  z_cutoff: 1.0
-  persistence: 2
-  trigger_default: "acceleration => supportive"
-  duplicates_of: ecb_bs
-  notes: Same concept bucket as ECB BS; avoid stacking routinely.
+### Deferred (post‑MVP) — Stress
+# - id: move_idx
+#   name: MOVE index
+#   category: stress
+#   series: [MOVE]
+#   cadence: daily
+#   directionality: higher_is_draining
+#   scoring: threshold
+#   persistence: 1
+#   trigger_default: "> 120 => headwind"
+#   duplicates_of: ofr_liq_idx
+#   notes: Licensing; defer.
 
-- id: stables_7d
-  name: Stablecoin net issuance (7d)
-  category: crypto
-  series: [DEFI_LLAMA_STABLES]
-  cadence: daily
-  directionality: higher_is_supportive
-  scoring: z
-  z_cutoff: 1.0
-  persistence: 2
-  trigger_default: "+2–5e9/7d => supportive"
-  duplicates_of:
-  notes: Optional; treat as distinct; avoid pairing with highly overlapping core signals in Router.
+### Deferred (post‑MVP) — Global
+# - id: ecb_bs
+#   name: ECB balance sheet 1w Δ (local)
+#   category: global
+#   series: [ECB_ASSETS]
+#   cadence: weekly
+#   directionality: higher_is_supportive
+#   scoring: z
+#   z_cutoff: 1.0
+#   persistence: 2
+#   trigger_default: "sustained increase => supportive"
+#   duplicates_of:
+#   notes: Deferred post‑MVP.
+
+# - id: boj_bs
+#   name: BoJ balance sheet 1w Δ (local)
+#   category: global
+#   series: [BOJ_ASSETS]
+#   cadence: weekly
+#   directionality: higher_is_supportive
+#   scoring: z
+#   z_cutoff: 1.0
+#   persistence: 2
+#   trigger_default: "acceleration => supportive"
+#   duplicates_of: ecb_bs
+#   notes: Deferred post‑MVP.
+
+### Deferred (post‑MVP) — Crypto
+# - id: stables_7d
+#   name: Stablecoin net issuance (7d)
+#   category: crypto
+#   series: [DEFI_LLAMA_STABLES]
+#   cadence: daily
+#   directionality: higher_is_supportive
+#   scoring: z
+#   z_cutoff: 1.0
+#   persistence: 2
+#   trigger_default: "+2–5e9/7d => supportive"
+#   duplicates_of:
+#   notes: Deferred post‑MVP.

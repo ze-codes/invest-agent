@@ -1,37 +1,33 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
-from app.db import get_db
-from app.models import IndicatorRegistry
+from api.routers import health, registry, series, analytics, events, history, viz
+
 
 app = FastAPI(title="invest-agent API", version="0.1.0")
 
+# CORS (dev-friendly)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
+# Include modular routers
+app.include_router(health.router)
+app.include_router(registry.router)
+app.include_router(series.router)
+app.include_router(analytics.router)
+app.include_router(events.router)
+app.include_router(history.router)
+app.include_router(viz.router)
 
-
-@app.get("/indicators")
-def list_indicators(db: Session = Depends(get_db)):
-    rows = db.query(IndicatorRegistry).order_by(IndicatorRegistry.indicator_id).all()
-    return [
-        {
-            "id": r.indicator_id,
-            "name": r.name,
-            "category": r.category,
-            "series": r.series_json,
-            "cadence": r.cadence,
-            "directionality": r.directionality,
-            "trigger_default": r.trigger_default,
-            "scoring": r.scoring,
-            "z_cutoff": float(r.z_cutoff) if r.z_cutoff is not None else None,
-            "persistence": r.persistence,
-            "duplicates_of": r.duplicates_of,
-            "notes": r.notes,
-        }
-        for r in rows
-    ]
+# Static files (for HTML viz pages)
+static_dir = Path(__file__).resolve().parents[1] / "api" / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
