@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.snapshot import compute_snapshot
+from app.cli_fetch import fetch_core_series
 
 
 router = APIRouter()
@@ -49,4 +50,14 @@ def backfill_history(horizon: str = "1w", days: int = 180, k: int = 8, as_of_mod
         count += 1
     return {"horizon": horizon, "days": days, "persisted": count}
 
+
+
+@router.post("/events/fetch_core")
+async def trigger_fetch_core(pages: int = 50, limit: int = 1000):
+    # Uses FETCH_PAGES/FETCH_LIMIT env hints in fetch_core_series
+    import os
+    os.environ["FETCH_PAGES"] = str(pages)
+    os.environ["FETCH_LIMIT"] = str(limit)
+    await fetch_core_series()
+    return {"status": "ok", "pages": pages, "limit": limit}
 

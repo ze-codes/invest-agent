@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from api.routers import health, registry, series, analytics, events, history, viz
+from api.routers import health, registry, series, analytics, events, history, viz, llm
 
 
 app = FastAPI(title="invest-agent API", version="0.1.0")
@@ -25,6 +25,7 @@ app.include_router(analytics.router)
 app.include_router(events.router)
 app.include_router(history.router)
 app.include_router(viz.router)
+app.include_router(llm.router)
 
 # Static files (for HTML viz pages)
 static_dir = Path(__file__).resolve().parents[1] / "api" / "static"

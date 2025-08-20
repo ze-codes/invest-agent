@@ -100,6 +100,19 @@ def parse_redemptions_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     for r in payload.get("data", []):
         if (r.get("transaction_type") or "").lower() != "redemptions":
             continue
+        # Filter to redemptions that inject cash to the private sector
+        # Include: Marketable securities; Nonmarketable savings bonds (held by the public)
+        # Exclude: Government Account Series (intragovernmental), Federal Financing Bank, SLGS, and other nonmarketable
+        market = (r.get("security_market") or "").strip().lower()
+        stype = (r.get("security_type") or "").strip().lower()
+        include = False
+        if market == "marketable":
+            include = True
+        elif market == "nonmarketable":
+            # Savings bonds lines typically include the word 'savings'
+            include = ("savings" in stype)
+        if not include:
+            continue
         num = _parse_dts_numeric(r.get("transaction_today_amt"))
         if num is None:
             continue
@@ -127,7 +140,11 @@ def parse_interest_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         if (r.get("transaction_type") or "").lower() != "withdrawals":
             continue
         # Prefer description; fallback to category text
-        cat_desc = (r.get("transaction_catg_desc") or "").strip()
+        cat_desc_raw = r.get("transaction_catg_desc")
+        cat_desc = (cat_desc_raw or "").strip()
+        # Some DTS APIs return the literal string "null" instead of JSON null
+        if cat_desc.lower() == "null":
+            cat_desc = ""
         cat_raw = (r.get("transaction_catg") or "").strip()
         text = cat_desc or cat_raw
         lower_text = text.lower()

@@ -14,6 +14,13 @@ from app.schemas import SeriesPoint, SeriesResponse
 router = APIRouter()
 
 
+# Place static route before dynamic one to avoid capture ("list" being treated as {series_id})
+@router.get("/series/list")
+def list_series_ids(db: Session = Depends(get_db)):
+    rows = db.execute(text("SELECT DISTINCT series_id FROM series_vintages ORDER BY series_id")).fetchall()
+    return [r[0] for r in rows]
+
+
 @router.get("/series/{series_id}", response_model=SeriesResponse)
 def get_series(series_id: str, start: Optional[str] = None, end: Optional[str] = None, limit: Optional[int] = 500, as_of: Optional[str] = None, db: Session = Depends(get_db)):
     # For MVP: ignore start/end in SQL and return up to limit latest points; enhance later
@@ -49,11 +56,5 @@ def get_series(series_id: str, start: Optional[str] = None, end: Optional[str] =
         for r in rows
     ]
     return SeriesResponse(series_id=series_id, points=points)
-
-
-@router.get("/series/list")
-def list_series_ids(db: Session = Depends(get_db)):
-    rows = db.execute(text("SELECT DISTINCT series_id FROM series_vintages ORDER BY series_id")).fetchall()
-    return [r[0] for r in rows]
 
 

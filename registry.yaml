@@ -1,7 +1,7 @@
 - id: net_liq
   name: Net Liquidity (WALCL - TGA - RRP)
   category: core_plumbing
-  series: [WALCL, TGA, RRP]
+  series: [WALCL, TGA, RRPONTSYD]
   cadence: weekly_daily
   directionality: higher_is_supportive
   scoring: z
@@ -14,7 +14,7 @@
 - id: rrp_delta
   name: ON RRP 5d Δ
   category: core_plumbing
-  series: [RRP]
+  series: [RRPONTSYD]
   cadence: daily
   directionality: lower_is_supportive
   scoring: z
@@ -148,7 +148,7 @@
   persistence: 1
   trigger_default: "higher daily redemptions => supportive"
   duplicates_of: ust_net_w
-  notes: Public debt cash redemptions from DTS.
+  notes: Public redemptions only (marketable + savings); excludes intragovernmental (e.g., GAS/FFB/SLGS).
 
 - id: ust_interest
   name: Treasury interest/coupon outlays (daily)

@@ -34,7 +34,13 @@
         <input type="number" id="limit" value="1000" min="10" max="5000" />
         <button type="submit">Load</button>
       </form>
+      <div id="legend_controls" style="margin-top: 8px">
+        <button type="button" id="btn_select_all">Select all</button>
+        <button type="button" id="btn_deselect_all">Deselect all</button>
+        <button type="button" id="btn_fetch_core">Fetch core data</button>
+      </div>
     </div>
+    <div id="status" style="margin: 8px 0; color: #555"></div>
     <div id="chart"></div>
     <h3>Indicator details</h3>
     <div id="ind_details"></div>
@@ -51,7 +57,7 @@
       function getDefaultIds() {
         const override = getQueryParam("ids");
         if (override) return override;
-        return "WALCL,RESPPLLOPNWW,RRPONTSYD,TGA,SOFR,IORB,DTB3,DTB4WK";
+        return ""; // empty → will fetch from /series/list, else fallback list below
       }
 
       function getDefaultAsOf() {
@@ -65,6 +71,40 @@
       document.getElementById("ids").value = getDefaultIds();
       document.getElementById("asof").value = getDefaultAsOf();
       document.getElementById("limit").value = String(getDefaultLimit());
+
+      async function fetchAllSeriesIds() {
+        try {
+          const r = await fetch("/series/list");
+          if (!r.ok) throw new Error("/series/list failed");
+          return r.json();
+        } catch (e) {
+          console.warn("Failed to fetch /series/list", e);
+          return [];
+        }
+      }
+
+      function setStatus(msg) {
+        const el = document.getElementById("status");
+        if (el) el.textContent = msg || "";
+      }
+
+      function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function fetchAllSeriesIdsWithRetry(retries, intervalMs) {
+        let attempt = 0;
+        while (attempt < retries) {
+          const ids = await fetchAllSeriesIds();
+          if (Array.isArray(ids) && ids.length) return ids;
+          attempt += 1;
+          setStatus(`Waiting for data… (attempt ${attempt}/${retries})`);
+          await delay(intervalMs);
+        }
+        return [];
+      }
+
+      // This page visualizes series only; no indicator fetch
 
       async function fetchSeries(id, asof, limit) {
         const q = asof
@@ -200,6 +240,15 @@
         }
       }
 
+      function setAllTracesVisible(visible) {
+        const gd = document.getElementById("chart");
+        const n = gd && gd.data ? gd.data.length : 0;
+        if (!n) return;
+        const indices = Array.from({ length: n }, (_, i) => i);
+        const vis = visible ? true : "legendonly";
+        Plotly.restyle(gd, { visible: vis }, indices);
+      }
+
       document.getElementById("form").addEventListener("submit", function (ev) {
         ev.preventDefault();
         const ids = document.getElementById("ids").value;
@@ -208,12 +257,61 @@
         load(ids, asof, limit);
       });
 
+      // Legend controls
+      document
+        .getElementById("btn_select_all")
+        ?.addEventListener("click", function () {
+          setAllTracesVisible(true);
+        });
+      document
+        .getElementById("btn_deselect_all")
+        ?.addEventListener("click", function () {
+          setAllTracesVisible(false);
+        });
+
+      // Trigger fetch-core
+      document
+        .getElementById("btn_fetch_core")
+        ?.addEventListener("click", async function () {
+          try {
+            setStatus("Fetching core data…");
+            const r = await fetch("/events/fetch_core", { method: "POST" });
+            if (!r.ok) throw new Error("fetch_core failed");
+            setStatus("Fetch complete. Reloading chart…");
+            const ids = document.getElementById("ids").value;
+            const asof = document.getElementById("asof").value;
+            const limit =
+              parseInt(document.getElementById("limit").value) || 1000;
+            await load(ids, asof, limit);
+            setStatus("");
+          } catch (e) {
+            console.warn("fetch_core failed", e);
+            setStatus("");
+          }
+        });
+
       // initial load
-      load(
-        document.getElementById("ids").value,
-        document.getElementById("asof").value,
-        parseInt(document.getElementById("limit").value) || 1000
-      );
+      (async function init() {
+        let idsCsv = document.getElementById("ids").value;
+        if (!idsCsv) {
+          setStatus("Loading available series…");
+          const allIds = await fetchAllSeriesIdsWithRetry(20, 500);
+          if (Array.isArray(allIds) && allIds.length) {
+            idsCsv = allIds.join(",");
+            document.getElementById("ids").value = idsCsv;
+          } else {
+            setStatus("No series found in the database yet.");
+          }
+        }
+        const asof = document.getElementById("asof").value;
+        const limit = parseInt(document.getElementById("limit").value) || 1000;
+        if (idsCsv) {
+          setStatus("");
+          load(idsCsv, asof, limit);
+        }
+
+        // Do not display indicators here
+      })();
     </script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-from . import health, registry, series, analytics, events, history, viz
+from . import health, registry, series, analytics, events, history, viz, llm
 
 __all__ = [
     "health",
@@ -8,6 +8,7 @@ __all__ = [
     "events",
     "history",
     "viz",
+    "llm",
 ]
 
 

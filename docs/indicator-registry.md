@@ -78,7 +78,7 @@ Note on canonical source of truth
 
   - **What it is**: These series track the Fed's holdings of Treasury securities and Mortgage-Backed Securities. The weekly change reflects the pace of QT (runoff) or QE (purchases).
   - **Impact**: High. This is the mechanical implementation of QE/QT. Runoff at the announced caps is a steady, persistent drain on liquidity.
-  - **Interpretation for risk assets**: Consistent runoff at the Fed's stated caps is a structural headwind for risk assets. Any slowdown or halt in runoff would be supportive.
+  - **Interpretation for risk assets**: “Runoff” means the Fed allows holdings to mature without reinvestment, so the level of `WSHOSHO`/`WSHOMCB` trends down and the weekly change is negative. Faster/more negative weekly changes (close to the caps) = stronger headwind. A slowdown (smaller negatives), a flat profile (near zero change), or increases (positive change, i.e., purchases/reinvestments) are progressively more supportive.
 
 - `UST_AUCTION_OFFERINGS` — Total offering amount per auction date (DTS `auctions_query`). Units: USD.
 
@@ -97,6 +97,7 @@ Note on canonical source of truth
   - **What it is**: The daily cash outflows from the Treasury as securities mature and are redeemed.
   - **Impact**: High (supportive). Redemptions return cash to holders and reduce the TGA balance, injecting liquidity back into the system.
   - **Interpretation for risk assets**: Elevated or clustered redemptions are supportive of liquidity and can offset issuance drains around the same window. Used directly as an indicator and in net settlement calculations.
+  - **Scope (filtered)**: Includes marketable securities and nonmarketable United States Savings Securities. Excludes intragovernmental/non‑public categories such as Government Account Series (GAS), Federal Financing Bank (FFB), SLGS, and similar, which do not inject cash into the private sector.
 
 - `UST_INTEREST` — Interest/coupon outlays on Treasury securities, daily (DTS). Units: USD.
 
@@ -109,6 +110,16 @@ Note on canonical source of truth
   - **What it is**: A derived weekly series that nets Treasury cash outflows/inflows by settlement week: auction Issues minus Redemptions of maturing debt minus Interest outlays.
   - **Impact**: High (cash call timing). Captures the lumpy, week-clustered funding impact that tightens or eases liquidity conditions.
   - **Interpretation for risk assets**: Large positive weekly nets (heavy issuance relative to returns) are draining; negative nets are supportive.
+  - **How it’s calculated (code-backed)**:
+    - Weekly buckets are ISO weeks anchored to Monday. Each daily observation is assigned to `week = Monday(observation_date)`.
+    - Inputs and sources:
+      - Issues: `UST_AUCTION_ISSUES` (Treasury Auctions; sum of `accepted_amount` by issue_date; fallback to `offering_amount` if accepted missing). Source: DTS `auctions_query` (units USD).
+      - Redemptions: `UST_REDEMPTIONS` (Public Debt Transactions; filtered to marketable + savings only; sum of `transaction_today_amt` where `transaction_type = "Redemptions"`). Source: DTS (units USD, stored with `scale=1e6`).
+      - Interest: `UST_INTEREST` (Deposits and Withdrawals of the Operating Cash; withdrawals where category starts with “Interest on Treasury…” preferring Gross). Source: DTS (units USD, stored with `scale=1e6`).
+    - Scaling: Each row is converted to USD via its `scale` column; weekly sums use `value_numeric * scale`.
+    - Weekly net formula: `Net = Issues − Redemptions − Interest` for each Monday week bucket.
+    - Persistence: Saved as series `UST_NET_SETTLE_W` with `units="USD"`, `scale=1.0`, `source="DERIVED"`.
+    - Reference implementation: see `app/supply.py` functions `compute_weekly_net_settlements` and `upsert_weekly_net_settlements`.
 
 - `H8_DEPOSITS` — Bank deposits (H.8), weekly. Units: USD.
 
@@ -151,6 +162,7 @@ Note on canonical source of truth
   - **What it is**: A measure of implied volatility in the U.S. Treasury market, akin to the VIX for stocks.
   - **Impact**: Medium-High. High rates volatility makes it difficult for investors to hedge and value other assets, leading to a general reduction in risk-taking.
   - **Interpretation for risk assets**: A high MOVE index reading (> 120-130) typically corresponds to tightening financial conditions and is a headwind for risk assets.
+  - **Status**: Not yet ingested.
 
 - `ECB_ASSETS` — ECB balance sheet aggregate (local currency), weekly. Units: local.
 - `BOJ_ASSETS` — BoJ balance sheet aggregate (local currency), weekly. Units: local.
@@ -158,11 +170,13 @@ Note on canonical source of truth
   - **What it is**: The balance sheets of the European Central Bank and Bank of Japan.
   - **Impact**: Medium. These central banks are major sources of global liquidity. Their policy actions can have spillover effects on USD liquidity through currency and interest rate differentials.
   - **Interpretation for risk assets**: Expansionary policy from the ECB or BoJ is generally supportive for global risk assets, including those priced in USD.
+  - **Status**: Not yet ingested.
 
 - `DEFI_LLAMA_STABLES` — Stablecoin circulating supply (summed), daily. Units: USD.
   - **What it is**: The total market capitalization of major USD-pegged stablecoins.
   - **Impact**: Low-Medium (for traditional markets). It's a direct proxy for the amount of USD-equivalent liquidity available on-chain for crypto assets.
   - **Interpretation for risk assets**: While primarily relevant to crypto, a strong inflow into stablecoins can be a leading indicator of speculative appetite and represents a pool of liquidity at the edge of the traditional financial system.
+  - **Status**: Not yet ingested.
 
 Notes:
 
@@ -178,7 +192,8 @@ Notes:
 - `net_liq` — Net Liquidity (WALCL − TGA − RRP)
 
   - **Why it matters**: This is the most comprehensive top-down measure of liquidity available to the private sector from the Fed's balance sheet. It acts as a high-level "tide" that influences all risk assets. By subtracting the Treasury's and money market funds' cash parked at the Fed (`TGA`, `RRP`) from the Fed's total assets (`WALCL`), it estimates the liquidity that is actually circulating in the financial system and available to support economic activity and asset prices.
-  - **Series chosen**: `WALCL` (Fed balance sheet total assets) is the ultimate source of base liquidity from the central bank. `TGA` and `RRP` represent the two largest non-reserve liabilities that effectively "lock up" or remove this liquidity from private sector hands. Combining them provides a robust net measure.
+  - **Series chosen**: `WALCL` (Fed balance sheet total assets) is the ultimate source of base liquidity from the central bank. `TGA` and `RRP` (`RRPONTSYD`) represent the two largest non-reserve liabilities that effectively "lock up" or remove this liquidity from private sector hands. Combining them provides a robust net measure.
+  - **Status**: Ingested (`WALCL`, `TGA`, `RRPONTSYD`).
   - Directionality: `higher_is_supportive`
   - Scoring: `z` (z20); Trigger: `z20 >= +1 => supportive`
   - Bucket: root (avoid stacking with its components)
@@ -187,6 +202,7 @@ Notes:
 
   - **Why it matters**: While the absolute level of the RRP is important, the _rate of change_ (`delta`) often has a more immediate market impact. A rapid fall in the RRP balance is a powerful signal that a large pool of cash is moving off the sidelines and being deployed into the market, typically starting with T-bills. This dynamic adds liquidity and can fuel demand for riskier assets. It's a key high-frequency signal of changing risk appetite.
   - **Series chosen**: Uses only `RRP` (`RRPONTSYD`), as it's the direct measure of the facility's outstanding balance, from which the change is calculated.
+  - **Status**: Ingested (`RRPONTSYD`).
   - Directionality: `lower_is_supportive`
   - Scoring: `z`; Trigger: `Δ <= -100e9/5d => supportive`
   - Bucket: `duplicates_of: net_liq`
@@ -195,6 +211,7 @@ Notes:
 
   - **Why it matters**: Similar to RRP, the change in the TGA balance is a direct, high-frequency driver of banking system reserves. A rapid increase in the TGA (e.g., around tax deadlines or large bond auctions) can quickly drain tens or hundreds of billions in liquidity, tightening financial conditions. Conversely, a rapid drawdown injects cash. Monitoring the 5-day delta captures these impactful flows.
   - **Series chosen**: Uses `TGA` data, which directly tracks the Treasury's cash balance at the Fed.
+  - **Status**: Ingested (`TGA`).
   - Directionality: `higher_is_draining`
   - Scoring: `z`; Trigger: `+75e9/5d => draining`
   - Bucket: `duplicates_of: net_liq`
@@ -203,6 +220,7 @@ Notes:
 
   - **Why it matters**: Bank reserves are the lifeblood of the financial plumbing. An increase in reserves makes it easier for banks to lend, settle payments, and absorb Treasury issuance. The weekly change is a direct read on the liquidity position of the banking system, which underpins the stability of broader markets.
   - **Series chosen**: Uses `RESPPLLOPNWW`, the definitive weekly data on reserve balances from the Fed's H.4.1 release.
+  - **Status**: Ingested (`RESPPLLOPNWW`).
   - Directionality: `higher_is_supportive`
   - Scoring: `z`; Trigger: `+25e9/w => supportive`
   - Bucket: `duplicates_of: net_liq`
@@ -210,6 +228,7 @@ Notes:
 - `qt_pace` — UST/MBS runoff vs caps (QT/QE)
   - **Why it matters**: Quantitative Tightening (QT) is a persistent, mechanical drain on liquidity. When the Fed's holdings of securities mature, the principal repayment is extinguished, removing money from the system. Tracking the pace of this runoff relative to the Fed's announced caps confirms whether this structural headwind is operating as expected.
   - **Series chosen**: `WSHOSHO` (Treasuries) and `WSHOMCB` (MBS) are direct line items on the Fed's balance sheet that track its holdings, allowing for calculation of the weekly change/runoff.
+  - **Status**: Ingested (`WSHOSHO`, `WSHOMCB`).
   - Directionality: `higher_is_draining`
   - Scoring: `threshold`; Trigger: `@cap => headwind`
   - Bucket: `duplicates_of: reserves_w`
@@ -220,6 +239,7 @@ Notes:
 
   - **Why it matters**: This spread is a key proxy for money market tightness. IORB is a Fed-administered rate, acting as a floor. SOFR reflects the market-determined cost of borrowing cash against Treasury collateral. If SOFR trades consistently above IORB, it indicates that demand for cash is outstripping supply in the critical repo market, a clear sign of funding stress and tightening conditions.
   - **Series chosen**: `SOFR` and `IORB` are the two components of the spread. SOFR is the market benchmark, and IORB is the policy benchmark, making their relationship a clean signal.
+  - **Status**: Ingested (`SOFR`, `IORB`).
   - Directionality: `higher_is_draining`
   - Scoring: `threshold`; Trigger: `> 0 bps persistent => tight`
   - Bucket: root for floor concept
@@ -236,6 +256,7 @@ Notes:
 
   - **Why it matters**: MMFs arbitrage vs the RRP admin rate directly. When bill yields exceed RRP materially, cash exits RRP into bills, reducing floor usage and supporting risk appetite.
   - **Series chosen**: `DTB3`/`DTB4WK` vs admin `RRP_RATE`. Derived series: `BILL_RRP_BPS` (bps).
+  - **Status**: Ingested (`DTB3`, `DTB4WK`, `RRP_RATE`, `BILL_RRP_BPS`).
   - Directionality: `higher_is_supportive`
   - Scoring: `threshold`; Trigger: `> +25 bps => RRP drain likely`
   - Bucket: root for floor concept
@@ -276,6 +297,7 @@ Notes:
 
   - **Why it matters**: Consolidates Treasury cash flows into a weekly net of Issues − Redemptions − Interest, aligning to the actual, lumpy settlement cadence that drives funding conditions.
   - **Series chosen**: `UST_NET_SETTLE_W` (derived weekly series).
+  - **Status**: Ingested (`UST_NET_SETTLE_W`).
   - Directionality: `higher_is_draining`
   - Scoring: `z`; Trigger: `> +80–100e9/w => drain`
 
@@ -283,6 +305,7 @@ Notes:
 
   - **Why it matters**: Not all issuance is created equal. Short-term T-bills are often bought by money market funds with excess cash, so they are less draining on overall liquidity than long-term coupon bonds, which require duration-taking investors to sell other assets to make room. A higher share of bills in total issuance is therefore less of a headwind for markets.
   - **Series chosen**: `UST_AUCTION_OFFERINGS` (sum of bills vs coupons by auction date) to calculate the proportion of bills in issuance.
+  - **Status**: Ingested (`UST_AUCTION_OFFERINGS`); bill-only variant stored as `UST_BILL_OFFERINGS`.
   - Directionality: `higher_is_supportive`
   - Scoring: `threshold`; Trigger: `>= 65% => less drain`
   - Bucket: `duplicates_of: ust_net_2w`
@@ -291,6 +314,7 @@ Notes:
 
   - **Why it matters**: Large, concentrated settlements of Treasury coupon auctions can cause temporary but acute liquidity drains on specific days. Monitoring the weekly intensity helps identify periods where this "lumpy" demand for cash could tighten funding conditions.
   - **Series chosen**: `UST_AUCTION_ISSUES` provides the proxy settlement timing and amounts for coupon-bearing securities. This can be upgraded when a more explicit settlement dataset is integrated.
+  - **Status**: Ingested (`UST_AUCTION_ISSUES`).
   - Directionality: `higher_is_draining`
   - Scoring: `threshold`; Trigger: `> +80e9/w => watch`
   - Bucket: `duplicates_of: ust_net_2w`
@@ -299,6 +323,7 @@ Notes:
 
   - **Why it matters**: Redemptions reduce the TGA and inject cash back into the system, supporting liquidity, especially when clustered.
   - **Series chosen**: `UST_REDEMPTIONS`.
+  - **Status**: Ingested (`UST_REDEMPTIONS`).
   - Directionality: `higher_is_supportive`
   - Scoring: `z`; Trigger: `higher daily redemptions => supportive`
   - Bucket: `duplicates_of: ust_net_2w`
@@ -307,6 +332,7 @@ Notes:
 
   - **Why it matters**: Coupon and interest payments are direct cash injections from the Treasury to the private sector.
   - **Series chosen**: `UST_INTEREST`.
+  - **Status**: Ingested (`UST_INTEREST`).
   - Directionality: `higher_is_supportive`
   - Scoring: `z`; Trigger: `higher coupon/interest outlays => supportive`
   - Bucket: `duplicates_of: ust_net_2w`
