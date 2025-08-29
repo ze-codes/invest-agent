@@ -113,7 +113,18 @@ def _load_series_docs() -> Dict[str, Dict[str, str]]:
 def get_indicator_doc(indicator_id: str, *, truncate_chars: Optional[int] = None) -> str:
     """Return the full markdown block for a given indicator id (empty string if missing)."""
     blocks = _load_md_blocks()
+    # Try exact match first
     doc = blocks.get(indicator_id, "")
+    if not doc and indicator_id:
+        # Be forgiving on case: indicators are typically lowercase with underscores
+        doc = blocks.get(indicator_id.lower(), "")
+        if not doc:
+            # Last resort: linear case-insensitive match over keys
+            target = indicator_id.lower()
+            for k, v in blocks.items():
+                if k.lower() == target:
+                    doc = v
+                    break
     if truncate_chars and truncate_chars > 0 and len(doc) > truncate_chars:
         return doc[:truncate_chars]
     return doc
@@ -121,6 +132,21 @@ def get_indicator_doc(indicator_id: str, *, truncate_chars: Optional[int] = None
 
 def get_series_doc(series_id: str) -> Dict[str, str]:
     series_map = _load_series_docs()
-    return series_map.get(series_id, {})
+    if not series_id:
+        return {}
+    # Exact match
+    doc = series_map.get(series_id)
+    if doc:
+        return doc
+    # Series IDs in docs are typically uppercase; try normalized variants
+    sid_upper = series_id.upper()
+    doc = series_map.get(sid_upper)
+    if doc:
+        return doc
+    sid_lower = series_id.lower()
+    for k, v in series_map.items():
+        if k.lower() == sid_lower:
+            return v
+    return {}
 
 

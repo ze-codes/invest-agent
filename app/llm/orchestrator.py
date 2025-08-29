@@ -446,13 +446,15 @@ def _tool_catalog_description() -> str:
         "Tools available:\n"
         "- get_snapshot(horizon, k?): Returns current snapshot JSON.\n"
         "- get_router(horizon, k?): Returns router picks JSON.\n"
-        "- get_indicator_history(indicator_id, horizon, days?): Returns recent indicator points.\n"
-        "- get_series_history(series_id, limit?): Returns recent series points.\n"
+        "- get_indicator_history(indicator_id, horizon, days?): Returns recent indicator data.\n"
+        "- get_series_history(series_id, limit?): Returns recent series data.\n"
         "- Documentation tools (use when user asks what a thing means, such as 'what is reserves_w'):\n"
-        "  - get_indicator_doc(id): Returns indicator documentation text.\n"
-        "  - get_series_doc(id): Returns series documentation fields.\n"
-        "Example: TOOL get_indicator_doc {\"id\":\"net_liq\"}\n"
-        "Rules: Do NOT call the same tool with identical args twice. If you already have the needed data, respond as FINAL.\n"
+        "  - get_indicator_doc(id): Returns an indicator's documentation, good for when a user asks about an indicator.\n"
+        "    - Example: TOOL get_indicator_doc {\"id\":\"net_liq\"}\n"
+        "  - get_series_doc(id): Returns a series' documentation, good for when a user asks about a series.\n"
+        "    - Example: TOOL get_series_doc {\"id\":\"TGA\"}\n"
+        "Rules: Do NOT call the same tool with identical args twice.\n"
+        "Rules: If a documentation tool call returns empty content, respond FINAL and answer with ONLY the requested ID to indicate you don't know.\n"
         "Rules: Tool arguments MUST be a single valid JSON object. Do not use quotes around keys incorrectly; use double quotes.\n"
         "Example: TOOL get_indicator_history {\"indicator_id\":\"reserves_w\",\"horizon\":\"1w\",\"days\":90}\n"
         "Decide which tool to call (or none).\n"
@@ -580,10 +582,15 @@ def agent_answer_question_events(
                     import json as _json
                     try:
                         args = _json.loads(tool_json_buf)
-                        # Loop guard: if repeating same tool+args, instruct to finalize
+                        # Loop guard: if repeating same tool+args, nudge and move to next decision step (no user-facing leak)
                         if tool_trace and tool_trace[-1].get("tool") == tool_name and tool_trace[-1].get("args") == args:
-                            answer_text = "Provide FINAL based on the existing tool result; do not repeat the same tool call."
-                            yield {"event": "decision", "data": {"type": "final", "reason": "duplicate_tool"}}
+                            messages.append({
+                                "role": "assistant",
+                                "content": (
+                                    "You already have the requested data. Respond as FINAL with a concise answer now."
+                                ),
+                            })
+                            # Move to next decision step
                             break
                         yield {"event": "tool_call", "data": {"name": tool_name, "args": args}}
                         result = _execute_tool(db, tool_name, args)

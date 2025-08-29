@@ -3,21 +3,12 @@ from typing import Optional
 import re
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse, FileResponse
 
 
 router = APIRouter()
 
 
-@router.get("/viz/series", response_class=HTMLResponse)
-def viz_series(ids: Optional[str] = None, as_of: Optional[str] = None, limit: int = 1000):
-    # Lightweight HTML/JS page using Plotly; pulls data from /series/{id}
-    default_ids = [
-        "WALCL", "RESPPLLOPNWW", "RRPONTSYD", "TGA", "SOFR", "IORB", "DTB3", "DTB4WK",
-    ]
-    series_ids = ids.split(",") if (ids and ids.strip()) else default_ids
-    file_path = Path(__file__).resolve().parents[2] / "api" / "static" / "viz_series.html"
-    return FileResponse(str(file_path))
+# Removed legacy /viz/series route. Use static page: /static/viz_series.html
 
 
 _DOCS_CACHE: dict = {"mtime": None, "series": {}, "indicators": {}}
@@ -63,7 +54,8 @@ def _parse_registry_docs() -> tuple[dict, dict]:
                 }
         else:
             why = re.search(r"\*\*Why it matters\*\*:\s*(.*)", content)
-            scoring = re.search(r"Scoring:\s*`?([a-zA-Z0-9_]+)`?;\s*Trigger:\s*`?([^`\n]+)" , content)
+            # Allow optional explanatory text (e.g., (z20)) between Scoring value and semicolon
+            scoring = re.search(r"Scoring:\s*`?([a-zA-Z0-9_]+)`?(?:\s*\([^)]*\))?;\s*Trigger:\s*`?([^`\n]+)" , content)
             direction = re.search(r"Directionality:\s*`?([^`\n]+)" , content)
             for cid in current_ids:
                 ind_info[cid] = {
@@ -122,19 +114,20 @@ def registry_explainer(series: Optional[str] = None, indicators: Optional[str] =
     s_map, i_map = _parse_registry_docs()
     out = {"series": {}, "indicators": {}}
     if series:
+        s_lower = {k.lower(): k for k in s_map.keys()}
         for sid in [s.strip() for s in series.split(",") if s.strip()]:
-            if sid in s_map:
-                out["series"][sid] = s_map[sid]
+            key = sid if sid in s_map else s_lower.get(sid.lower())
+            if key:
+                out["series"][sid] = s_map[key]
     if indicators:
+        i_lower = {k.lower(): k for k in i_map.keys()}
         for iid in [s.strip() for s in indicators.split(",") if s.strip()]:
-            if iid in i_map:
-                out["indicators"][iid] = i_map[iid]
+            key = iid if iid in i_map else i_lower.get(iid.lower())
+            if key:
+                out["indicators"][iid] = i_map[key]
     return out
 
 
-@router.get("/viz/indicators")
-def viz_indicators(ids: Optional[str] = None, horizon: str = "1w", days: int = 180):
-    file_path = Path(__file__).resolve().parents[2] / "api" / "static" / "viz_indicators.html"
-    return FileResponse(str(file_path))
+# Removed legacy /viz/indicators route. Use static page: /static/viz_indicators.html
 
 

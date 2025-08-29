@@ -74,11 +74,17 @@ Note on canonical source of truth
   - **Impact**: Medium. Bill yields relative to the RRP rate and IORB drive MMF asset allocation.
   - **Interpretation for risk assets**: When bill yields rise significantly above the RRP rate, they incentivize MMFs to move cash out of the RRP facility and into T-bills. This is supportive for risk assets because it can kickstart a "cash out of the sidelines" dynamic, even if the cash only moves into government debt initially.
 
-- `WSHOSHO` / `WSHOMCB` — UST/MBS holdings/runoff proxies for QT/QE (weekly or H.4.1 components). Units: USD (millions).
+- `WSHOSHO` — Fed Treasury securities holdings/runoff proxy (QT/QE), weekly or H.4.1 components. Units: USD (millions).
 
-  - **What it is**: These series track the Fed's holdings of Treasury securities and Mortgage-Backed Securities. The weekly change reflects the pace of QT (runoff) or QE (purchases).
+  - **What it is**: The Fed's holdings of U.S. Treasury securities. The weekly change reflects the pace of QT (runoff) or QE (purchases).
   - **Impact**: High. This is the mechanical implementation of QE/QT. Runoff at the announced caps is a steady, persistent drain on liquidity.
-  - **Interpretation for risk assets**: “Runoff” means the Fed allows holdings to mature without reinvestment, so the level of `WSHOSHO`/`WSHOMCB` trends down and the weekly change is negative. Faster/more negative weekly changes (close to the caps) = stronger headwind. A slowdown (smaller negatives), a flat profile (near zero change), or increases (positive change, i.e., purchases/reinvestments) are progressively more supportive.
+  - **Interpretation for risk assets**: “Runoff” means `WSHOSHO` trends down and the weekly change is negative. Faster/more negative weekly changes (close to the caps) = stronger headwind. A slowdown (smaller negatives), a flat profile (near zero change), or increases (positive change, i.e., purchases/reinvestments) are progressively more supportive.
+
+- `WSHOMCB` — Fed MBS holdings/runoff proxy (QT/QE), weekly or H.4.1 components. Units: USD (millions).
+
+  - **What it is**: The Fed's holdings of agency mortgage‑backed securities. The weekly change reflects the pace of QT (runoff) or QE (purchases).
+  - **Impact**: High. This is the mechanical implementation of QE/QT. Runoff at the announced caps is a steady, persistent drain on liquidity.
+  - **Interpretation for risk assets**: “Runoff” means `WSHOMCB` trends down and the weekly change is negative. Faster/more negative weekly changes (close to the caps) = stronger headwind. A slowdown (smaller negatives), a flat profile (near zero change), or increases (positive change, i.e., purchases/reinvestments) are progressively more supportive.
 
 - `UST_AUCTION_OFFERINGS` — Total offering amount per auction date (DTS `auctions_query`). Units: USD.
 

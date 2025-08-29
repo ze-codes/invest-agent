@@ -9,6 +9,34 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
         margin: 16px;
+        padding-top: 56px; /* space for fixed top menu */
+        padding-right: 400px; /* reserve space for right sidebar chat */
+      }
+      /* Top overlay navigation */
+      #top_nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        border-bottom: 1px solid #eee;
+        z-index: 9000;
+        backdrop-filter: saturate(120%) blur(6px);
+      }
+      #top_nav a {
+        text-decoration: none;
+        color: #222;
+        font-weight: 600;
+        padding: 6px 10px;
+        border-radius: 6px;
+      }
+      #top_nav a:hover {
+        background: #f2f2f2;
       }
       #controls {
         margin-bottom: 12px;
@@ -20,14 +48,55 @@
       input[type="text"] {
         width: 560px;
       }
+      /* Loading overlay */
+      #loading_overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      #loading_box {
+        background: #fff;
+        border: 1px solid #ddd;
+        padding: 12px 16px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        font-size: 14px;
+        color: #333;
+      }
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid #ccc;
+        border-top-color: #333;
+        border-radius: 50%;
+        display: inline-block;
+        animation: spin 0.9s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>
+    <div id="top_nav">
+      <a href="/static/viz_series.html" aria-current="page">Data Series</a>
+      <a href="/static/viz_indicators.html">Indicators</a>
+    </div>
     <h2>Series Visualization</h2>
     <div id="controls">
       <form id="form">
-        <label>Series IDs (comma-separated):</label>
-        <input type="text" id="ids" value="" />
+        <input type="hidden" id="ids" value="" />
         <label>as_of (optional ISO8601):</label>
         <input type="text" id="asof" value="" />
         <label>limit:</label>
@@ -42,11 +111,26 @@
     </div>
     <div id="status" style="margin: 8px 0; color: #555"></div>
     <div id="chart"></div>
+    <div id="loading_overlay">
+      <div id="loading_box">
+        <span class="spinner"></span><span id="loading_text">Loading…</span>
+      </div>
+    </div>
     <h3>Series details</h3>
     <div id="details"></div>
     <h3>Docs explainer</h3>
     <div id="series_docs"></div>
     <script>
+      function showLoading(message) {
+        const ov = document.getElementById("loading_overlay");
+        const txt = document.getElementById("loading_text");
+        if (txt && message) txt.textContent = message;
+        ov.style.display = "flex";
+      }
+      function hideLoading() {
+        const ov = document.getElementById("loading_overlay");
+        ov.style.display = "none";
+      }
       function getQueryParam(name) {
         const url = new URL(window.location.href);
         return url.searchParams.get(name);
@@ -114,88 +198,93 @@
       }
 
       async function load(idsCsv, asof, limit) {
+        showLoading("Loading series…");
         const ids = idsCsv
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
         const traces = [];
         const detailRows = [];
-        for (const id of ids) {
-          try {
-            const js = await fetchSeries(id, asof, limit);
-            const x = js.points.map((p) => p.observation_date);
-            const y = js.points.map(
-              (p) => (p.value_numeric || 0) * (p.scale || 1)
-            );
-            const units = (
-              (js.points[0] && js.points[0].units) ||
-              ""
-            ).toLowerCase();
-            const isPct =
-              units.includes("percent") ||
-              id.toLowerCase().includes("pct") ||
-              id.toLowerCase().includes("share");
-            traces.push({
-              x: x,
-              y: y,
-              mode: "lines",
-              name: id,
-              yaxis: isPct ? "y2" : "y",
-            });
-            const last = js.points[js.points.length - 1] || {};
-            const latestVal = (last.value_numeric || 0) * (last.scale || 1);
-            detailRows.push(
-              "<tr>" +
-                "<td><code>" +
-                id +
-                "</code></td>" +
-                "<td>" +
-                (last.observation_date || "") +
-                "</td>" +
-                "<td>" +
-                (latestVal?.toLocaleString?.() || latestVal) +
-                "</td>" +
-                "<td>" +
-                (last.units || "") +
-                "</td>" +
-                "<td>" +
-                (last.source || "") +
-                "</td>" +
-                "</tr>"
-            );
-          } catch (e) {
-            console.error(e);
+        try {
+          for (const id of ids) {
+            try {
+              const js = await fetchSeries(id, asof, limit);
+              const x = js.points.map((p) => p.observation_date);
+              const y = js.points.map(
+                (p) => (p.value_numeric || 0) * (p.scale || 1)
+              );
+              const units = (
+                (js.points[0] && js.points[0].units) ||
+                ""
+              ).toLowerCase();
+              const isPct =
+                units.includes("percent") ||
+                id.toLowerCase().includes("pct") ||
+                id.toLowerCase().includes("share");
+              traces.push({
+                x: x,
+                y: y,
+                mode: "lines",
+                name: id,
+                yaxis: isPct ? "y2" : "y",
+              });
+              const last = js.points[js.points.length - 1] || {};
+              const latestVal = (last.value_numeric || 0) * (last.scale || 1);
+              detailRows.push(
+                "<tr>" +
+                  "<td><code>" +
+                  id +
+                  "</code></td>" +
+                  "<td>" +
+                  (last.observation_date || "") +
+                  "</td>" +
+                  "<td>" +
+                  (latestVal?.toLocaleString?.() || latestVal) +
+                  "</td>" +
+                  "<td>" +
+                  (last.units || "") +
+                  "</td>" +
+                  "<td>" +
+                  (last.source || "") +
+                  "</td>" +
+                  "</tr>"
+              );
+            } catch (e) {
+              console.error(e);
+            }
           }
+          const layout = {
+            title: ids.join(", "),
+            xaxis: { type: "date" },
+            yaxis: { rangemode: "tozero", title: "Value" },
+            yaxis2: {
+              rangemode: "tozero",
+              overlaying: "y",
+              side: "right",
+              title: "Percent",
+              ticksuffix: "%",
+            },
+            legend: { orientation: "h" },
+          };
+          Plotly.newPlot("chart", traces, layout, { responsive: true });
+          document.getElementById("details").innerHTML =
+            '<table border="1" cellpadding="6" cellspacing="0">' +
+            "<thead>" +
+            "<tr>" +
+            "<th>series_id</th>" +
+            "<th>latest_date</th>" +
+            "<th>latest_value (scaled)</th>" +
+            "<th>units</th>" +
+            "<th>source</th>" +
+            "</tr>" +
+            "</thead>" +
+            "<tbody>" +
+            detailRows.join("") +
+            "</tbody>" +
+            "</table>";
+        } finally {
+          hideLoading();
         }
-        const layout = {
-          title: ids.join(", "),
-          xaxis: { type: "date" },
-          yaxis: { rangemode: "tozero", title: "Value" },
-          yaxis2: {
-            rangemode: "tozero",
-            overlaying: "y",
-            side: "right",
-            title: "Percent",
-            ticksuffix: "%",
-          },
-          legend: { orientation: "h" },
-        };
-        Plotly.newPlot("chart", traces, layout, { responsive: true });
-        document.getElementById("details").innerHTML =
-          '<table border="1" cellpadding="6" cellspacing="0">' +
-          "<thead>" +
-          "<tr>" +
-          "<th>series_id</th>" +
-          "<th>latest_date</th>" +
-          "<th>latest_value (scaled)</th>" +
-          "<th>units</th>" +
-          "<th>source</th>" +
-          "</tr>" +
-          "</thead>" +
-          "<tbody>" +
-          detailRows.join("") +
-          "</tbody>" +
-          "</table>";
         let docs = { series: {} };
         try {
           const qs = encodeURIComponent(ids.join(","));
@@ -272,7 +361,7 @@
         .getElementById("btn_fetch_core")
         ?.addEventListener("click", async function () {
           try {
-            setStatus("Fetching core data…");
+            showLoading("Fetching core data…");
             const r = await fetch("/events/fetch_core", { method: "POST" });
             if (!r.ok) throw new Error("fetch_core failed");
             setStatus("Fetch complete. Reloading chart…");
@@ -285,6 +374,8 @@
           } catch (e) {
             console.warn("fetch_core failed", e);
             setStatus("");
+          } finally {
+            hideLoading();
           }
         });
 
@@ -292,24 +383,27 @@
       (async function init() {
         let idsCsv = document.getElementById("ids").value;
         if (!idsCsv) {
-          setStatus("Loading available series…");
+          showLoading("Loading available series…");
           const allIds = await fetchAllSeriesIdsWithRetry(20, 500);
           if (Array.isArray(allIds) && allIds.length) {
             idsCsv = allIds.join(",");
             document.getElementById("ids").value = idsCsv;
           } else {
             setStatus("No series found in the database yet.");
+            hideLoading();
+            return;
           }
         }
         const asof = document.getElementById("asof").value;
         const limit = parseInt(document.getElementById("limit").value) || 1000;
         if (idsCsv) {
           setStatus("");
-          load(idsCsv, asof, limit);
+          await load(idsCsv, asof, limit);
         }
 
         // Do not display indicators here
       })();
     </script>
   </body>
+  <script src="/static/chat_widget.js"></script>
 </html>

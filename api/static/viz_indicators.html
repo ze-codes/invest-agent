@@ -9,7 +9,8 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
         margin: 16px;
-        padding-bottom: 360px; /* extra bottom space */
+        padding-top: 56px; /* space for fixed top menu */
+        padding-right: 400px; /* reserve space for right sidebar chat */
       }
       #controls {
         margin-bottom: 12px;
@@ -21,14 +22,93 @@
       input[type="text"] {
         width: 560px;
       }
+      /* Loading overlay */
+      #loading_overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      #loading_box {
+        background: #fff;
+        border: 1px solid #ddd;
+        padding: 12px 16px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        font-size: 14px;
+        color: #333;
+      }
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid #ccc;
+        border-top-color: #333;
+        border-radius: 50%;
+        display: inline-block;
+        animation: spin 0.9s linear infinite;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>
+    <div
+      id="top_nav"
+      style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        border-bottom: 1px solid #eee;
+        z-index: 9000;
+        backdrop-filter: saturate(120%) blur(6px);
+      "
+    >
+      <a
+        href="/static/viz_series.html"
+        style="
+          text-decoration: none;
+          color: #222;
+          font-weight: 600;
+          padding: 6px 10px;
+          border-radius: 6px;
+        "
+        >Data Series</a
+      >
+      <a
+        href="/static/viz_indicators.html"
+        aria-current="page"
+        style="
+          text-decoration: none;
+          color: #222;
+          font-weight: 600;
+          padding: 6px 10px;
+          border-radius: 6px;
+        "
+        >Indicators</a
+      >
+    </div>
     <h2>Indicator Visualization</h2>
     <div id="controls">
       <form id="form">
-        <label>Indicator IDs (comma-separated):</label>
-        <input type="text" id="ids" value="" />
+        <input type="hidden" id="ids" value="" />
         <label>horizon:</label>
         <input type="text" id="horizon" value="1w" />
         <label>days:</label>
@@ -47,70 +127,29 @@
     </div>
     <div id="status" style="margin: 8px 0; color: #555"></div>
     <div id="chart"></div>
+    <div id="loading_overlay">
+      <div id="loading_box">
+        <span class="spinner"></span><span id="loading_text">Loading…</span>
+      </div>
+    </div>
     <h3>Indicator details</h3>
     <div id="ind_details"></div>
     <h3>Docs</h3>
     <div id="ind_docs"></div>
     <h3>Bucket details</h3>
     <div id="bucket_details"></div>
-    <h3>LLM Brief</h3>
-    <div id="brief_controls" style="margin: 8px 0">
-      <button type="button" id="btn_brief">Generate brief</button>
-      <span id="brief_status" style="color: #555"></span>
-    </div>
-    <div
-      id="brief_md"
-      style="
-        white-space: pre-wrap;
-        border: 1px solid #ddd;
-        padding: 8px;
-        border-radius: 6px;
-      "
-    ></div>
-    <h3>Ask a question</h3>
-    <div id="ask_box" style="margin: 8px 0">
-      <textarea
-        id="ask_q"
-        rows="3"
-        style="width: 100%"
-        placeholder="Ask about the current liquidity context…"
-      ></textarea>
-      <div style="margin-top: 6px">
-        <button type="button" id="btn_ask_stream">Ask (stream)</button>
-        <label style="margin-left: 12px"
-          ><input type="checkbox" id="chk_show_thinking" checked /> Show
-          thinking</label
-        >
-        <span id="ask_status" style="color: #555"></span>
-      </div>
-    </div>
-    <div id="ask_stream_panel" style="display: none; margin-top: 8px">
-      <div><strong>Agent stream</strong></div>
-      <div
-        id="ask_events"
-        style="
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 12px;
-          white-space: pre-wrap;
-          border: 1px solid #ddd;
-          padding: 8px;
-          border-radius: 6px;
-          max-height: 240px;
-          overflow: auto;
-        "
-      ></div>
-      <div style="margin-top: 6px"><strong>Answer</strong></div>
-      <div
-        id="ask_answer"
-        style="
-          white-space: pre-wrap;
-          border: 1px solid #ddd;
-          padding: 8px;
-          border-radius: 6px;
-        "
-      ></div>
-    </div>
+    <!-- LLM brief and ask sections now provided via floating widget -->
     <script>
+      function showLoading(message) {
+        const ov = document.getElementById("loading_overlay");
+        const txt = document.getElementById("loading_text");
+        if (txt && message) txt.textContent = message;
+        ov.style.display = "flex";
+      }
+      function hideLoading() {
+        const ov = document.getElementById("loading_overlay");
+        ov.style.display = "none";
+      }
       function getQueryParam(name) {
         const url = new URL(window.location.href);
         return url.searchParams.get(name);
@@ -172,121 +211,133 @@
       }
 
       async function load(idsCsv, horizon, days) {
+        showLoading("Loading data…");
         const ids = idsCsv
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
         const traces = [];
-        const reg = await fetch("/indicators").then((r) => r.json());
-        const regById = Object.fromEntries(reg.map((r) => [r.id, r]));
-        const detailRows = [];
-        let docs = { indicators: {} };
+        let registryDocs = { indicators: {} };
         try {
-          const qs = encodeURIComponent(ids.join(","));
-          docs = await fetch("/docs/registry_explainer?indicators=" + qs).then(
-            (r) => r.json()
-          );
-        } catch (e) {
-          console.warn("docs fetch failed", e);
-        }
-        for (const id of ids) {
+          const reg = await fetch("/indicators").then((r) => r.json());
+          const regById = Object.fromEntries(reg.map((r) => [r.id, r]));
+          const detailRows = [];
           try {
-            const js = await fetchIndicator(id, horizon, days);
-            const x = js.items.map((p) => p.as_of);
-            const val = js.items.map((p) => p.value_numeric);
-            const status = js.items.map((p) => statusNum(p.status));
-            traces.push({ x: x, y: val, mode: "lines", name: id, yaxis: "y" });
-            traces.push({
-              x: x,
-              y: status,
-              mode: "lines",
-              name: id + " (status)",
-              yaxis: "y2",
-              line: { dash: "dot" },
-            });
-            const latest = js.items[js.items.length - 1] || {};
-            const meta = regById[id] || {};
-            detailRows.push(
-              "<tr>" +
-                "<td><code>" +
-                id +
-                "</code></td>" +
-                "<td>" +
-                (meta.name || "") +
-                "</td>" +
-                "<td>" +
-                (meta.category || "") +
-                "</td>" +
-                "<td>" +
-                (meta.directionality || "") +
-                "</td>" +
-                "<td>" +
-                (meta.scoring || "") +
-                "</td>" +
-                "<td>" +
-                (meta.trigger_default || "") +
-                "</td>" +
-                "<td>" +
-                ((latest.value_numeric ?? "").toLocaleString?.() ||
-                  (latest.value_numeric ?? "")) +
-                "</td>" +
-                "<td>" +
-                (latest.status || "") +
-                "</td>" +
-                "</tr>"
-            );
+            const qs = encodeURIComponent(ids.join(","));
+            registryDocs = await fetch(
+              "/docs/registry_explainer?indicators=" + qs
+            ).then((r) => r.json());
+            console.log(registryDocs);
           } catch (e) {
-            console.error(e);
+            console.warn("docs fetch failed", e);
           }
-        }
+          for (const id of ids) {
+            try {
+              const js = await fetchIndicator(id, horizon, days);
+              const x = js.items.map((p) => p.as_of);
+              const val = js.items.map((p) => p.value_numeric);
+              const status = js.items.map((p) => statusNum(p.status));
+              traces.push({
+                x: x,
+                y: val,
+                mode: "lines",
+                name: id,
+                yaxis: "y",
+              });
+              traces.push({
+                x: x,
+                y: status,
+                mode: "lines",
+                name: id + " (status)",
+                yaxis: "y2",
+                line: { dash: "dot" },
+              });
+              const latest = js.items[js.items.length - 1] || {};
+              const meta = regById[id] || {};
+              detailRows.push(
+                "<tr>" +
+                  "<td><code>" +
+                  id +
+                  "</code></td>" +
+                  "<td>" +
+                  (meta.name || "") +
+                  "</td>" +
+                  "<td>" +
+                  (meta.category || "") +
+                  "</td>" +
+                  "<td>" +
+                  (meta.directionality || "") +
+                  "</td>" +
+                  "<td>" +
+                  (meta.scoring || "") +
+                  "</td>" +
+                  "<td>" +
+                  (meta.trigger_default || "") +
+                  "</td>" +
+                  "<td>" +
+                  ((latest.value_numeric ?? "").toLocaleString?.() ||
+                    (latest.value_numeric ?? "")) +
+                  "</td>" +
+                  "<td>" +
+                  (latest.status || "") +
+                  "</td>" +
+                  "</tr>"
+              );
+            } catch (e) {
+              console.error(e);
+            }
+          }
 
-        // Add continuous regime score history as a trace
-        try {
-          const hr = await fetch(
-            "/snapshot/history?horizon=" +
-              encodeURIComponent(horizon) +
-              "&days=" +
-              String(days)
-          );
-          if (hr.ok) {
-            const hist = await hr.json();
-            const hx = (hist.items || []).map((it) => it.as_of);
-            const hy = (hist.items || []).map((it) => {
-              const reg = it.regime || {};
-              return reg.score_cont != null ? reg.score_cont : reg.score;
-            });
-            traces.push({
-              x: hx,
-              y: hy,
-              mode: "lines",
-              name: "score_cont",
-              yaxis: "y2",
-              line: { color: "#222", width: 3 },
-            });
+          // Add continuous regime score history as a trace
+          try {
+            const hr = await fetch(
+              "/snapshot/history?horizon=" +
+                encodeURIComponent(horizon) +
+                "&days=" +
+                String(days)
+            );
+            if (hr.ok) {
+              const hist = await hr.json();
+              const hx = (hist.items || []).map((it) => it.as_of);
+              const hy = (hist.items || []).map((it) => {
+                const reg = it.regime || {};
+                return reg.score_cont != null ? reg.score_cont : reg.score;
+              });
+              traces.push({
+                x: hx,
+                y: hy,
+                mode: "lines",
+                name: "score_cont",
+                yaxis: "y2",
+                line: { color: "#222", width: 3 },
+              });
+            }
+          } catch (e) {
+            console.warn("score_cont history fetch failed", e);
           }
-        } catch (e) {
-          console.warn("score_cont history fetch failed", e);
+          const layout = {
+            title: ids.join(", "),
+            xaxis: { type: "date" },
+            yaxis: { rangemode: "tozero", title: "value_numeric" },
+            yaxis2: {
+              rangemode: "tozero",
+              overlaying: "y",
+              side: "right",
+              title: "status (-1..+1)",
+            },
+            legend: { orientation: "h" },
+          };
+          Plotly.newPlot("chart", traces, layout, { responsive: true });
+          document.getElementById("ind_details").innerHTML =
+            '<table border="1" cellpadding="6" cellspacing="0">' +
+            "<thead><tr>" +
+            "<th>indicator_id</th><th>name</th><th>category</th><th>directionality</th><th>scoring</th><th>trigger</th><th>latest_value</th><th>latest_status</th>" +
+            "</tr></thead><tbody>" +
+            detailRows.join("") +
+            "</tbody></table>";
+        } finally {
+          hideLoading();
         }
-        const layout = {
-          title: ids.join(", "),
-          xaxis: { type: "date" },
-          yaxis: { rangemode: "tozero", title: "value_numeric" },
-          yaxis2: {
-            rangemode: "tozero",
-            overlaying: "y",
-            side: "right",
-            title: "status (-1..+1)",
-          },
-          legend: { orientation: "h" },
-        };
-        Plotly.newPlot("chart", traces, layout, { responsive: true });
-        document.getElementById("ind_details").innerHTML =
-          '<table border="1" cellpadding="6" cellspacing="0">' +
-          "<thead><tr>" +
-          "<th>indicator_id</th><th>name</th><th>category</th><th>directionality</th><th>scoring</th><th>trigger</th><th>latest_value</th><th>latest_status</th>" +
-          "</tr></thead><tbody>" +
-          detailRows.join("") +
-          "</tbody></table>";
 
         // Bucket details table from snapshot
         try {
@@ -322,7 +373,8 @@
         }
         const docBlocks = ids
           .map(function (id) {
-            const d = (docs.indicators && docs.indicators[id]) || {};
+            const indDocs = (registryDocs && registryDocs.indicators) || {};
+            const d = indDocs[id] || {};
             if (!d.title && !d.why) return "";
             return (
               '<div style="margin:12px 0;">' +
@@ -448,7 +500,7 @@
 
       async function recomputeHistory(horizon, days) {
         try {
-          setStatus(
+          showLoading(
             `Recomputing ${horizon} indicator history for last ${days} days…`
           );
           const k = parseInt(document.getElementById("k").value) || 12;
@@ -469,6 +521,8 @@
         } catch (e) {
           console.warn("recompute failed", e);
           setStatus("");
+        } finally {
+          hideLoading();
         }
       }
 
@@ -563,16 +617,23 @@
       }
 
       (async function init() {
-        const ids = document.getElementById("ids").value;
+        let ids = document.getElementById("ids").value;
+        if (!ids) {
+          // Ensure IDs are populated before initial load to avoid race with presetIds
+          ids = await getDefaultIds();
+          document.getElementById("ids").value = ids;
+        }
         const h = document.getElementById("horizon").value || "1w";
         const d = parseInt(document.getElementById("days").value) || 180;
         const k = parseInt(document.getElementById("k").value) || 12;
         // kick off lightweight backfill (non-blocking)
         backfillLightweight(h, d, k);
+        showLoading("Loading data…");
         await load(ids, h, d);
-        await generateBrief(h);
+        hideLoading();
         setStatus("");
       })();
     </script>
   </body>
+  <script src="/static/chat_widget.js"></script>
 </html>
