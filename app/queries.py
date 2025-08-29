@@ -22,27 +22,19 @@ def get_latest_series_values(db: Session, series_ids: List[str]) -> List[Dict[st
 
 
 def get_as_of_series_values(db: Session, series_id: str, as_of: datetime) -> List[Dict[str, Any]]:
-    q = text(
-        """
-        SELECT * FROM series_vintages
-        WHERE series_id = :sid AND fetched_at <= :as_of
-        QUALIFY ROW_NUMBER() OVER (
-          PARTITION BY observation_date
-          ORDER BY COALESCE(vintage_date, publication_date::date, fetched_at::date) DESC, fetched_at DESC
-        ) = 1
-        ORDER BY observation_date
-        """
-    )
-    # The QUALIFY clause is not standard Postgres; emulate via subquery
+    # Emulate "as of" by selecting the most recent vintage per observation_date
+    # whose coalesced publication/vintage/fetched_at DATE is on/before the cutoff date.
     q = text(
         """
         SELECT * FROM (
           SELECT sv.*, ROW_NUMBER() OVER (
             PARTITION BY observation_date
-            ORDER BY COALESCE(vintage_date, publication_date::date, fetched_at::date) DESC, fetched_at DESC
+            ORDER BY COALESCE(vintage_date, publication_date::date, fetched_at::date) DESC,
+                     fetched_at DESC
           ) AS rn
           FROM series_vintages sv
-          WHERE sv.series_id = :sid AND sv.fetched_at <= :as_of
+          WHERE sv.series_id = :sid
+            AND COALESCE(vintage_date, publication_date::date, fetched_at::date) <= CAST(:as_of AS date)
         ) t
         WHERE t.rn = 1
         ORDER BY t.observation_date

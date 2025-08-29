@@ -37,7 +37,7 @@ Note on canonical source of truth
   - **Impact**: High. Reserves are the ultimate settlement asset. Changes directly impact banks' capacity to lend, absorb Treasury issuance, and make markets.
   - **Interpretation for risk assets**: Rising reserves signal easier funding conditions, which is supportive for risk assets. Falling reserves signal tightening and can become a significant headwind if they become scarce.
 
-- `RRP` / `RRPONTSYD` — ON RRP facility outstanding, daily. Units: USD (millions).
+- `RRPONTSYD` — ON RRP facility outstanding, daily. Units: USD (millions).
 
   - **What it is**: The amount of cash that money market funds (MMFs) and other eligible institutions lend to the Fed overnight, earning a fixed rate. It's a safe, cash-equivalent investment that represents liquidity _drained_ from the private sector.
   - **Impact**: High. A high RRP balance means a large pool of cash is sitting on the sidelines. A sustained decline in RRP implies that cash is being deployed into other assets (typically T-bills first, then other securities), adding liquidity to the market.

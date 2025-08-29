@@ -9,6 +9,7 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
         margin: 16px;
+        padding-bottom: 360px; /* extra bottom space */
       }
       #controls {
         margin-bottom: 12px;
@@ -32,11 +33,16 @@
         <input type="text" id="horizon" value="1w" />
         <label>days:</label>
         <input type="number" id="days" value="180" min="7" max="2000" />
+        <label>k:</label>
+        <input type="number" id="k" value="12" min="1" max="64" />
         <button type="submit">Load</button>
       </form>
       <div id="legend_controls" style="margin-top: 8px">
         <button type="button" id="btn_select_all">Select all</button>
         <button type="button" id="btn_deselect_all">Deselect all</button>
+      </div>
+      <div id="recompute_controls" style="margin-top: 8px">
+        <button type="button" id="btn_recompute">Recompute history</button>
       </div>
     </div>
     <div id="status" style="margin: 8px 0; color: #555"></div>
@@ -45,15 +51,79 @@
     <div id="ind_details"></div>
     <h3>Docs</h3>
     <div id="ind_docs"></div>
+    <h3>Bucket details</h3>
+    <div id="bucket_details"></div>
+    <h3>LLM Brief</h3>
+    <div id="brief_controls" style="margin: 8px 0">
+      <button type="button" id="btn_brief">Generate brief</button>
+      <span id="brief_status" style="color: #555"></span>
+    </div>
+    <div
+      id="brief_md"
+      style="
+        white-space: pre-wrap;
+        border: 1px solid #ddd;
+        padding: 8px;
+        border-radius: 6px;
+      "
+    ></div>
+    <h3>Ask a question</h3>
+    <div id="ask_box" style="margin: 8px 0">
+      <textarea
+        id="ask_q"
+        rows="3"
+        style="width: 100%"
+        placeholder="Ask about the current liquidity context…"
+      ></textarea>
+      <div style="margin-top: 6px">
+        <button type="button" id="btn_ask_stream">Ask (stream)</button>
+        <label style="margin-left: 12px"
+          ><input type="checkbox" id="chk_show_thinking" checked /> Show
+          thinking</label
+        >
+        <span id="ask_status" style="color: #555"></span>
+      </div>
+    </div>
+    <div id="ask_stream_panel" style="display: none; margin-top: 8px">
+      <div><strong>Agent stream</strong></div>
+      <div
+        id="ask_events"
+        style="
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 12px;
+          white-space: pre-wrap;
+          border: 1px solid #ddd;
+          padding: 8px;
+          border-radius: 6px;
+          max-height: 240px;
+          overflow: auto;
+        "
+      ></div>
+      <div style="margin-top: 6px"><strong>Answer</strong></div>
+      <div
+        id="ask_answer"
+        style="
+          white-space: pre-wrap;
+          border: 1px solid #ddd;
+          padding: 8px;
+          border-radius: 6px;
+        "
+      ></div>
+    </div>
     <script>
       function getQueryParam(name) {
         const url = new URL(window.location.href);
         return url.searchParams.get(name);
       }
 
-      function getDefaultIds() {
+      async function getDefaultIds() {
         const override = getQueryParam("ids");
         if (override) return override;
+        try {
+          const reg = await fetch("/indicators").then((r) => r.json());
+          const ids = (reg || []).map((r) => r.id);
+          if (ids && ids.length) return ids.join(",");
+        } catch {}
         return "net_liq,reserves_w,tga_delta,rrp_delta,bill_rrp,ofr_liq_idx";
       }
 
@@ -65,7 +135,9 @@
         return parseInt(getQueryParam("days") || "180");
       }
 
-      document.getElementById("ids").value = getDefaultIds();
+      (async function presetIds() {
+        document.getElementById("ids").value = await getDefaultIds();
+      })();
       document.getElementById("horizon").value = getDefaultHorizon();
       document.getElementById("days").value = String(getDefaultDays());
 
@@ -79,6 +151,17 @@
           String(days);
         const r = await fetch(url);
         if (!r.ok) throw new Error("Failed to fetch " + id + " history");
+        return r.json();
+      }
+
+      async function fetchSnapshot(horizon, k) {
+        const url =
+          "/snapshot?horizon=" +
+          encodeURIComponent(horizon) +
+          "&k=" +
+          String(k);
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("Failed to fetch snapshot");
         return r.json();
       }
 
@@ -156,6 +239,34 @@
             console.error(e);
           }
         }
+
+        // Add continuous regime score history as a trace
+        try {
+          const hr = await fetch(
+            "/snapshot/history?horizon=" +
+              encodeURIComponent(horizon) +
+              "&days=" +
+              String(days)
+          );
+          if (hr.ok) {
+            const hist = await hr.json();
+            const hx = (hist.items || []).map((it) => it.as_of);
+            const hy = (hist.items || []).map((it) => {
+              const reg = it.regime || {};
+              return reg.score_cont != null ? reg.score_cont : reg.score;
+            });
+            traces.push({
+              x: hx,
+              y: hy,
+              mode: "lines",
+              name: "score_cont",
+              yaxis: "y2",
+              line: { color: "#222", width: 3 },
+            });
+          }
+        } catch (e) {
+          console.warn("score_cont history fetch failed", e);
+        }
         const layout = {
           title: ids.join(", "),
           xaxis: { type: "date" },
@@ -176,6 +287,39 @@
           "</tr></thead><tbody>" +
           detailRows.join("") +
           "</tbody></table>";
+
+        // Bucket details table from snapshot
+        try {
+          const k = parseInt(document.getElementById("k").value) || 12;
+          const snap = await fetchSnapshot(horizon, k);
+          const buckets = snap.bucket_details || [];
+          const rows = buckets.map((b) => {
+            const members = (b.members || [])
+              .map(
+                (m) => `${m.id}(${m.status}${m.is_representative ? "*" : ""})`
+              )
+              .join(", ");
+            return (
+              "<tr>" +
+              `<td><code>${b.bucket_id}</code></td>` +
+              `<td>${b.category ?? ""}</td>` +
+              `<td>${b.weight ?? 0}</td>` +
+              `<td>${b.aggregate_status}</td>` +
+              `<td><code>${b.representative_id ?? ""}</code></td>` +
+              `<td>${members}</td>` +
+              "</tr>"
+            );
+          });
+          document.getElementById("bucket_details").innerHTML =
+            '<table border="1" cellpadding="6" cellspacing="0">' +
+            "<thead><tr>" +
+            "<th>bucket_id</th><th>category</th><th>weight</th><th>aggregate_status</th><th>representative</th><th>members (status; *rep)</th>" +
+            "</tr></thead><tbody>" +
+            rows.join("") +
+            "</tbody></table>";
+        } catch (e) {
+          console.warn("bucket details render failed", e);
+        }
         const docBlocks = ids
           .map(function (id) {
             const d = (docs.indicators && docs.indicators[id]) || {};
@@ -206,6 +350,97 @@
         docsHost.innerHTML = docBlocks;
       }
 
+      async function generateBrief(horizon) {
+        const statusEl = document.getElementById("brief_status");
+        const outEl = document.getElementById("brief_md");
+        try {
+          statusEl.textContent = "Generating brief…";
+          outEl.textContent = "";
+          const k = parseInt(document.getElementById("k").value) || 12;
+          const r = await fetch(
+            "/llm/brief?horizon=" +
+              encodeURIComponent(horizon) +
+              "&k=" +
+              String(k),
+            { method: "POST" }
+          );
+          if (!r.ok) throw new Error("brief failed");
+          const js = await r.json();
+          outEl.textContent = js.markdown || "";
+          statusEl.textContent = "";
+        } catch (e) {
+          console.warn(e);
+          statusEl.textContent = "Brief failed.";
+        }
+      }
+
+      function askLLMStream(question, horizon) {
+        const statusEl = document.getElementById("ask_status");
+        const ansEl = document.getElementById("ask_answer");
+        const evEl = document.getElementById("ask_events");
+        const panel = document.getElementById("ask_stream_panel");
+        const showThinking =
+          document.getElementById("chk_show_thinking").checked;
+        if (!question || !question.trim()) return;
+        panel.style.display = "block";
+        ansEl.textContent = "";
+        evEl.textContent = "";
+        statusEl.textContent = "Streaming…";
+        const url =
+          "/llm/ask_stream?question=" +
+          encodeURIComponent(question) +
+          "&horizon=" +
+          encodeURIComponent(horizon);
+        const es = new EventSource(url);
+        es.addEventListener("thinking_token", (e) => {
+          if (!showThinking) return;
+          try {
+            const d = JSON.parse(e.data);
+            evEl.textContent += d.text || "";
+          } catch {}
+        });
+        es.addEventListener("answer_token", (e) => {
+          try {
+            const d = JSON.parse(e.data);
+            ansEl.textContent += d.text || "";
+          } catch {}
+        });
+        es.addEventListener("start", (e) => {
+          try {
+            evEl.textContent += "start " + e.data + "\n";
+          } catch {}
+        });
+        es.addEventListener("decision", (e) => {
+          try {
+            evEl.textContent += "decision " + e.data + "\n";
+          } catch {}
+        });
+        es.addEventListener("tool_call", (e) => {
+          try {
+            evEl.textContent += "tool_call " + e.data + "\n";
+          } catch {}
+        });
+        es.addEventListener("tool_result", (e) => {
+          try {
+            evEl.textContent += "tool_result " + e.data + "\n";
+          } catch {}
+        });
+        es.addEventListener("final", (e) => {
+          try {
+            const d = JSON.parse(e.data);
+            if (!ansEl.textContent) ansEl.textContent = d.answer || "";
+          } catch {
+            ansEl.textContent = e.data || "";
+          }
+          statusEl.textContent = "";
+          es.close();
+        });
+        es.onerror = () => {
+          statusEl.textContent = "Stream error.";
+          es.close();
+        };
+      }
+
       function setStatus(msg) {
         const el = document.getElementById("status");
         if (el) el.textContent = msg || "";
@@ -216,12 +451,15 @@
           setStatus(
             `Recomputing ${horizon} indicator history for last ${days} days…`
           );
+          const k = parseInt(document.getElementById("k").value) || 12;
           const url =
             "/events/backfill_history?horizon=" +
             encodeURIComponent(horizon) +
             "&days=" +
             String(days) +
-            "&k=8&as_of_mode=obs";
+            "&k=" +
+            String(k) +
+            "&as_of_mode=obs";
           const r = await fetch(url, { method: "POST" });
           if (!r.ok) throw new Error("backfill failed");
           const js = await r.json();
@@ -249,11 +487,53 @@
         const h = document.getElementById("horizon").value || "1w";
         const d = parseInt(document.getElementById("days").value) || 180;
         (async () => {
-          await recomputeHistory(h, d);
           await load(ids, h, d);
+          await generateBrief(h);
           setStatus("");
         })();
       });
+
+      // Manual recompute trigger
+      document
+        .getElementById("btn_recompute")
+        ?.addEventListener("click", function () {
+          const ids = document.getElementById("ids").value;
+          const h = document.getElementById("horizon").value || "1w";
+          const d = parseInt(document.getElementById("days").value) || 180;
+          (async () => {
+            await recomputeHistory(h, d);
+            await load(ids, h, d);
+            await generateBrief(h);
+            setStatus("");
+          })();
+        });
+
+      document
+        .getElementById("btn_brief")
+        ?.addEventListener("click", function () {
+          const h = document.getElementById("horizon").value || "1w";
+          generateBrief(h);
+        });
+
+      document
+        .getElementById("btn_ask_stream")
+        ?.addEventListener("click", function () {
+          const q = document.getElementById("ask_q").value || "";
+          const h = document.getElementById("horizon").value || "1w";
+          askLLMStream(q, h);
+        });
+
+      // Submit question on Enter (Shift+Enter inserts newline)
+      document
+        .getElementById("ask_q")
+        ?.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" && !ev.shiftKey) {
+            ev.preventDefault();
+            const q = document.getElementById("ask_q").value || "";
+            const h = document.getElementById("horizon").value || "1w";
+            askLLMStream(q, h);
+          }
+        });
 
       document
         .getElementById("btn_select_all")
@@ -266,12 +546,31 @@
           setAllTracesVisible(false);
         });
 
+      async function backfillLightweight(horizon, days, k) {
+        try {
+          const url =
+            "/events/backfill_history?horizon=" +
+            encodeURIComponent(horizon) +
+            "&days=" +
+            String(days) +
+            "&k=" +
+            String(k) +
+            "&as_of_mode=obs";
+          await fetch(url, { method: "POST" });
+        } catch (e) {
+          // non-fatal
+        }
+      }
+
       (async function init() {
         const ids = document.getElementById("ids").value;
         const h = document.getElementById("horizon").value || "1w";
         const d = parseInt(document.getElementById("days").value) || 180;
-        await recomputeHistory(h, d);
+        const k = parseInt(document.getElementById("k").value) || 12;
+        // kick off lightweight backfill (non-blocking)
+        backfillLightweight(h, d, k);
         await load(ids, h, d);
+        await generateBrief(h);
         setStatus("");
       })();
     </script>

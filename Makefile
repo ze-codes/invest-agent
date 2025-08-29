@@ -23,6 +23,9 @@ fetch-core:
 test:
 	pytest -q | cat
 
+test-api:
+	docker compose exec api bash -lc "pytest -q $(TESTS) | cat"
+
 test-up: 
 	docker compose -f docker-compose.test.yml up -d
 

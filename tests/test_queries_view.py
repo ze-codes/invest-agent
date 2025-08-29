@@ -21,18 +21,20 @@ def test_series_latest_view_and_as_of(monkeypatch):
 
         # Initial print
         upsert_series_vintages(session, "X", [
-            {"observation_date": obs, "vintage_date": None, "publication_date": None, "fetched_at": t0, "value_numeric": 100.0},
+            {"observation_date": obs, "vintage_date": None, "publication_date": t0, "fetched_at": t0, "value_numeric": 100.0},
         ], units="USD", scale=1.0, source="TEST")
 
         # Revised value later
         upsert_series_vintages(session, "X", [
-            {"observation_date": obs, "vintage_date": None, "publication_date": None, "fetched_at": t1, "value_numeric": 110.0},
+            {"observation_date": obs, "vintage_date": None, "publication_date": t1, "fetched_at": t1, "value_numeric": 110.0},
         ], units="USD", scale=1.0, source="TEST")
 
         latest = get_latest_series_values(session, ["X"])
         assert len(latest) == 1
         assert float(latest[0]["value_numeric"]) == 110.0
 
+        # As-of uses coalesced DATE (publication/vintage/fetched). With only fetched_at populated,
+        # values available up to the as_of DATE should be selected.
         as_of_rows = get_as_of_series_values(session, "X", as_of=t0)
         assert len(as_of_rows) == 1
         assert float(as_of_rows[0]["value_numeric"]) == 100.0

@@ -25,7 +25,7 @@ app.include_router(analytics.router)
 app.include_router(events.router)
 app.include_router(history.router)
 app.include_router(viz.router)
-app.include_router(llm.router)
+app.include_router(llm.router, prefix="/llm")
 
 # Static files (for HTML viz pages)
 static_dir = Path(__file__).resolve().parents[1] / "api" / "static"

@@ -37,6 +37,8 @@ def get_snapshot_history(horizon: str = "1w", days: int = 180, slim: bool = True
                 "tilt": r.tilt,
                 "score": r.score,
                 "max_score": r.max_score,
+                # score_cont not persisted in DB; approximate by score for now
+                "score_cont": r.score,
             },
         }
         if not slim:

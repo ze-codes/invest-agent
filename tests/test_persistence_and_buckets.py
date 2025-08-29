@@ -171,10 +171,10 @@ def test_buckets_representative_and_aggregate():
         assert "root_a" not in ids
         assert "a1" not in ids
 
-        # Buckets must include the aggregate with all members
-        b = next((b for b in js["buckets"] if b["bucket"].endswith("/root_a")), None)
+        # bucket_details must include the aggregate with all members
+        b = next((b for b in js["bucket_details"] if b["bucket_id"] == "root_a"), None)
         assert b is not None
-        assert set(b["members"]) == {"root_a", "a1", "a2"}
+        assert set(m["id"] for m in b["members"]) == {"root_a", "a1", "a2"}
         # Aggregate status should be +1 (all positive contributions)
         assert b["aggregate_status"] == "+1"
     finally:

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     openrouter_api_key: str | None = None
     llm_base_url: str | None = None
+    llm_agent: bool = True  # enable agentic tool use for /llm/ask
 
     class Config:
         env_file = ".env"

@@ -41,7 +41,7 @@ def _parse_fred_observations(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "observation_date": datetime.strptime(obs["date"], "%Y-%m-%d").date(),
                 "vintage_date": None,
-                "publication_date": pub_dt,
+                # Do not set publication_date; inferred from fetched_at downstream
                 "fetched_at": datetime.now(UTC),
                 # Store raw numeric; apply scaling via the 'scale' column in DB metadata
                 "value_numeric": value,
@@ -72,7 +72,7 @@ def _parse_tga_rows(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "observation_date": datetime.strptime(row["record_date"], "%Y-%m-%d").date(),
                 "vintage_date": None,
-                "publication_date": None,
+                # Do not set publication_date; inferred from fetched_at downstream
                 "fetched_at": datetime.now(UTC),
                 "value_numeric": num,
             }
@@ -87,6 +87,12 @@ async def fetch_core_series() -> None:
     pages = int(pages_env) if pages_env and pages_env.isdigit() else 50
     limit = int(limit_env) if limit_env and limit_env.isdigit() else 1000
 
+    # If backfilling, allow larger paginator settings via overrides
+    backfill_start = os.getenv("BACKFILL_START")
+    if backfill_start:
+        pages = int(os.getenv("BACKFILL_PAGES", "200"))
+        limit = int(os.getenv("BACKFILL_LIMIT", str(limit)))
+
     async def fetch_and_ingest(series_id: str, units: str = "USD", scale: float = 1.0, observation_start: str | None = None):
         payload = await fetch_series(series_id, observation_start=observation_start)
         rows = _parse_fred_observations(payload)
@@ -96,7 +102,7 @@ async def fetch_core_series() -> None:
     # FRED/ALFRED core
     print(f"[fetch-core] FRED core series…", flush=True)
     await asyncio.gather(
-        fetch_and_ingest("WALCL", units="USD", scale=1e6, observation_start="2010-01-01"),
+        fetch_and_ingest("WALCL", units="USD", scale=1e6, observation_start=os.getenv("BACKFILL_START", "2010-01-01")),
         fetch_and_ingest("RESPPLLOPNWW", units="USD", scale=1e6, observation_start="2010-01-01"),
         fetch_and_ingest("RRPONTSYD", units="USD", scale=1e6, observation_start="2014-01-01"),
         fetch_and_ingest("SOFR", units="percent", scale=1.0, observation_start="2018-01-01"),
@@ -104,8 +110,8 @@ async def fetch_core_series() -> None:
         fetch_and_ingest("DTB3", units="percent", scale=1.0, observation_start="2000-01-01"),
         fetch_and_ingest("DTB4WK", units="percent", scale=1.0, observation_start="2001-01-01"),
         # QT/QE components (FRED weekly, units typically millions)
-        fetch_and_ingest("WSHOSHO", units="USD", scale=1e6, observation_start="2010-01-01"),
-        fetch_and_ingest("WSHOMCB", units="USD", scale=1e6, observation_start="2010-01-01"),
+        fetch_and_ingest("WSHOSHO", units="USD", scale=1e6, observation_start=os.getenv("BACKFILL_START", "2010-01-01")),
+        fetch_and_ingest("WSHOMCB", units="USD", scale=1e6, observation_start=os.getenv("BACKFILL_START", "2010-01-01")),
     )
     print(f"[fetch-core] FRED done in {time.time()-t0:0.1f}s", flush=True)
 

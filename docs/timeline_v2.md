@@ -6,21 +6,27 @@ References: `implementation-plan.md` (architecture/data model) and `llm-spec.md`
 
 ### Phase A (Days 1–3): LLM endpoints and mockable orchestration
 
-- [ ] Router `api/routers/llm.py`:
-  - [ ] POST `/brief` { horizon, as_of?, k? } → { json, markdown, frozen_inputs_id }
-  - [ ] POST `/ask` { question, horizon?, as_of? } → { answer, citations }
-- [ ] Orchestrator `app/llm.py`:
-  - [ ] Retrieval tools: snapshot, router, indicator history, series values, registry docs (reuse `_parse_registry_docs`)
-  - [ ] Prompts per `llm-spec.md` (summarizer, ask)
-  - [ ] Verifier: numeric parity, section/length, banned words, top‑3 coverage, sign‑flip detection
-  - [ ] Provider interface + mock provider for tests
-- [ ] Config/env: `LLM_PROVIDER`, provider keys in `env.sample`, wire in `app/settings.py`
-- [ ] Tests: golden fixtures for `/brief` and `/ask` using mock provider
+- [x] Router `api/routers/llm.py`:
+  - [x] POST `/brief` { horizon, as_of?, k? } → { json, markdown, frozen_inputs_id }
+  - [x] POST `/ask` { question, horizon?, as_of? } → { answer, citations }
+- [x] Orchestrator `app/llm`:
+  - [x] Retrieval tools: snapshot, router, indicator history, series values, registry docs
+  - [x] Prompts per `llm-spec.md` (summarizer, ask)
+  - [x] Verifier: numeric parity, section/length, banned words, top‑3 coverage, sign‑flip detection
+  - [x] Provider interface + mock provider for tests
+- [x] Config/env: `LLM_PROVIDER`, provider keys in `env.sample`, wire in `app/settings.py`
+- [x] Tests: golden fixtures for `/brief` and `/ask` using mock provider
 
-### Phase B (Days 4–5): Provider integration and caching
+### Phase B (Days 4–5): Provider integration, tools-agent, and caching
 
 - [ ] Integrate hosted provider (OpenAI/Anthropic) behind env flags
-- [ ] Read‑through cache for `/brief` keyed by `snapshot_id` via `briefs_cache`
+- [x] Add tool-using agent for `/llm/ask` (plan → tool call(s) → final answer)
+  - [x] Define ToolCatalog (names, args, outputs) and selection rules
+  - [x] Expose tools: get_snapshot, get_router, get_indicator_history, get_series_latest, get_indicator_doc, get_series_doc
+  - [x] Orchestrator loop (max 3 steps), ToolCall → execute → ToolResult → FinalAnswer
+  - [ ] Bugfix: for definitional questions, never call `get_series_doc` for indicator ids; ensure `get_indicator_doc` is used when token ∈ indicator_ids
+  - [ ] Mock provider tool-calls; golden tests for tool selection (history vs series)
+- [ ] Read‑through cache for `/brief` keyed by `snapshot_id` via `briefs_cache` (deferred)
 - [ ] Basic logging/metrics: p50/p95 latency, verifier results
 
 ### Phase C (Days 6–7): Router rationales and scoring polish

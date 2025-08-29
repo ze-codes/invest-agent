@@ -46,7 +46,7 @@ table series_vintages (
   series_id           text not null,
   observation_date    date not null,
   vintage_date        date,          -- ALFRED realtime_start; null for non-ALFRED
-  publication_date    timestamptz,   -- DTS/OFR if time available; else date@00:00Z
+  publication_date    timestamptz,   -- optional; MVP uses fetched_at for point-in-time
   fetched_at          timestamptz not null default now(),
   value_numeric       numeric not null,
   units               text not null, -- 'USD', 'percent', 'bps', etc.
@@ -145,7 +145,7 @@ Migration tool: Alembic.
 
 - TGA: Operating Cash Balance. Fields `record_date`, `publication_date`, `close_today_bal`.
 - Auctions (DONE baseline): using `auctions_query` with fields `auction_date`, `issue_date`, `security_type`, `security_term`, `offering_amt`. We aggregate to two raw series: `UST_AUCTION_OFFERINGS` (by auction date) and `UST_AUCTION_ISSUES` (by issue date proxy).
-- Provenance: use `publication_date` (date) and `fetched_at`.
+- Provenance: use `fetched_at` (ingest time). `publication_date` may be null in MVP.
 
 - Redemptions (DONE): public debt cash redemptions/maturities. Daily series `UST_REDEMPTIONS` from DTS Public Debt Transactions (sums `transaction_today_amt` where `transaction_type = "Redemptions"`).
 - Interest (DONE): coupon/interest outlays. Daily series `UST_INTEREST` from DTS Deposits and Withdrawals of Operating Cash (Withdrawals where transaction category starts with “Interest on Treasury…”; prefer Gross when present).
@@ -270,13 +270,13 @@ Migration tool: Alembic.
 
 ### Triggers
 
-- When new observations arrive (fetched value with newer `publication_date`/`vintage_date`), enqueue recompute.
+- When new observations arrive (new `fetched_at` for same observation_date), enqueue recompute. `publication_date`/`vintage_date` are optional.
 - Recompute abstains if >2 Core indicators are stale (daily >48h, weekly >9d).
 
 ### Reliability
 
 - Exponential backoff with jitter; circuit-breaker after consecutive failures.
-- Idempotent writes keyed by `(series_id, observation_date, vintage_date|publication_date)`.
+- Idempotent writes keyed by `(series_id, observation_date, publication_date|fetched_at)` in MVP.
 
 ---
 

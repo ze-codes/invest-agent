@@ -16,15 +16,7 @@ def upsert_series_vintages(db: Session, series_id: str, rows: List[Dict[str, Any
         vintage_date = r.get("vintage_date")
         publication_date = r.get("publication_date")
         fetched_at = r.get("fetched_at") or datetime.now(UTC)
-        # For revisable sources (e.g., FRED), if neither vintage nor publication date is provided,
-        # derive a surrogate publication_date from the fetched_at calendar date.
-        if source != "DTS" and vintage_date is None and publication_date is None and fetched_at is not None:
-            publication_date = datetime(
-                fetched_at.year,
-                fetched_at.month,
-                fetched_at.day,
-                tzinfo=fetched_at.tzinfo,
-            )
+        # Do not derive publication_date; downstream queries will use fetched_at when publication_date is null.
         value_numeric = r["value_numeric"]
 
         filters = [

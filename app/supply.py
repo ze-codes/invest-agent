@@ -27,37 +27,12 @@ def compute_weekly_net_settlements(db: Session, weeks_back: int = 12) -> List[Di
     redemptions = get_latest_series_points(db, "UST_REDEMPTIONS", limit=weeks_back * 40)
     interest = get_latest_series_points(db, "UST_INTEREST", limit=weeks_back * 40)
 
-    # Restrict calculation window to the overlap across all three inputs
-    def _min_max(rows: List[Dict[str, Any]]) -> tuple[date | None, date | None]:
-        if not rows:
-            return None, None
-        return rows[0]["observation_date"], rows[-1]["observation_date"]
-
-    i_min, i_max = _min_max(issues)
-    r_min, r_max = _min_max(redemptions)
-    n_min, n_max = _min_max(interest)
-
-    # If any input is missing entirely, return empty (cannot compute overlap)
-    if not (i_min and r_min and n_min and i_max and r_max and n_max):
-        return []
-
-    common_start = max(i_min, r_min, n_min)
-    common_end = min(i_max, r_max, n_max)
-    if common_start > common_end:
-        return []
-
-    start_week = _monday_of_week(common_start)
-    end_week = _monday_of_week(common_end)
-
     weekly: Dict[date, Dict[str, float]] = {}
     presence: Dict[date, Dict[str, bool]] = {}
 
     def add_to(bucket_key: str, rows: List[Dict[str, Any]]):
         for r in rows:
             obs_date = r["observation_date"]
-            # Skip observations outside of the common overlap
-            if obs_date < common_start or obs_date > common_end:
-                continue
             week = _monday_of_week(obs_date)
             scaled_val = float(r["value_numeric"]) * float(r.get("scale", 1) or 1)
             agg = weekly.setdefault(week, {"issues": 0.0, "redemptions": 0.0, "interest": 0.0})
@@ -71,9 +46,6 @@ def compute_weekly_net_settlements(db: Session, weeks_back: int = 12) -> List[Di
 
     out: List[Dict[str, Any]] = []
     for week, vals in weekly.items():
-        # Ensure we only output within the common week bounds
-        if week < start_week or week > end_week:
-            continue
         # Require that all components are present for this week
         have = presence.get(week, {})
         if not (have.get("issues") and have.get("redemptions") and have.get("interest")):

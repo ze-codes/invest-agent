@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -80,5 +80,28 @@ def list_indicator_ids(only_available: bool = False, db: Session = Depends(get_d
         if has_any:
             out.append(ind.indicator_id)
     return out
+
+@router.get("/registry/buckets")
+def get_registry_buckets(db: Session = Depends(get_db)) -> Dict[str, List[str]]:
+    """Return static mapping of bucket roots to member indicator IDs.
+
+    Root is `duplicates_of` if present, else the indicator itself.
+    """
+    rows = db.query(IndicatorRegistry).order_by(IndicatorRegistry.indicator_id).all()
+    reg_by_id = {r.indicator_id: r for r in rows}
+    def root_id(indicator_id: str) -> str:
+        r = reg_by_id.get(indicator_id)
+        if r is None:
+            return indicator_id
+        return r.duplicates_of or indicator_id
+    buckets: Dict[str, List[str]] = {}
+    for r in rows:
+        rid = root_id(r.indicator_id)
+        buckets.setdefault(rid, []).append(r.indicator_id)
+    # Sort members for stable output
+    for rid in buckets.keys():
+        buckets[rid].sort()
+    return buckets
+
 
 

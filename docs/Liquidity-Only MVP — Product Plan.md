@@ -51,7 +51,7 @@ To avoid duplication, the complete, up-to-date registry (series, definitions, di
   - **Hysteresis**: require a small margin or persistence (e.g., 2–3 consecutive observations) to change sign to reduce flip-flopping.
   - **Backstop**: if `std < ε` or insufficient history (< 20 obs), treat z as 0 and fall back to threshold or neutral.
   - Weighted vote applied to bucket aggregates (Core 50%, Floor 30%, Supply 20%).
-- **Provenance:** Every row shows `series_id(s), publish_ts, value, window, z, vintage_id`.
+- **Provenance:** Every row shows `series_id(s), fetched_at (ingest ts), value, window, z` and, when available, `vintage_id`/`publication_date`. For MVP we only populate `fetched_at` + `observation_date`; `publication_date`/`vintage_date` are optional.
 
 **Example (abbrev.)**
 
@@ -145,9 +145,8 @@ Evidence:
       "flip_trigger": "Δ >= +50B/5d",
       "provenance": {
         "series": ["RRP"],
-        "vintage_id": "...",
-        "published_at": "...",
-        "fetched_at": "..."
+        "fetched_at": "...",
+        "vintage_id": "..."
       }
     }
   ],

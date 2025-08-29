@@ -2,7 +2,7 @@
   name: Net Liquidity (WALCL - TGA - RRP)
   category: core_plumbing
   series: [WALCL, TGA, RRPONTSYD]
-  cadence: weekly_daily
+  cadence: daily
   directionality: higher_is_supportive
   scoring: z
   z_cutoff: 1.0
@@ -116,7 +116,7 @@
   name: Bill share of issuance (%)
   category: supply
   series: [UST_AUCTION_OFFERINGS]
-  cadence: sched
+  cadence: daily
   directionality: higher_is_supportive
   scoring: threshold
   persistence: 1
@@ -128,7 +128,7 @@
   name: Coupon settlement intensity (weekly $)
   category: supply
   series: [UST_AUCTION_ISSUES]
-  cadence: sched
+  cadence: weekly
   directionality: higher_is_draining
   scoring: threshold
   persistence: 1

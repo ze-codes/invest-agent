@@ -271,18 +271,37 @@ def compute_indicator_status(db: Session, reg: IndicatorRegistry, as_of: datetim
                     0.0,
                 )
 
-            at_cap = (ust_runoff >= float(cap.ust_cap_usd_week)) or (mbs_runoff >= float(cap.mbs_cap_usd_week))
+            ust_cap = float(cap.ust_cap_usd_week)
+            mbs_cap = float(cap.mbs_cap_usd_week)
+            at_cap = (ust_runoff >= ust_cap) or (mbs_runoff >= mbs_cap)
             status = -1 if at_cap else 0
+            def _fmt_cap(x: float) -> str:
+                ax = abs(x)
+                if ax >= 1e12:
+                    return f"${ax/1e12:.2f}T"
+                if ax >= 1e9:
+                    return f"${ax/1e9:.2f}B"
+                if ax >= 1e6:
+                    return f"${ax/1e6:.2f}M"
+                if ax >= 1e3:
+                    return f"${ax/1e3:.2f}K"
+                return f"${ax:.2f}".rstrip("0").rstrip(".")
             result = {
                 "id": reg.indicator_id,
                 "value_numeric": ust_runoff + mbs_runoff,
                 "window": None,
                 "z20": None,
                 "status": "+1" if status > 0 else ("-1" if status < 0 else "0"),
-                "flip_trigger": reg.trigger_default or "@cap => headwind",
+                # Explicit numeric caps for clarity in briefs
+                "flip_trigger": f"UST ≥ {_fmt_cap(ust_cap)}/w or MBS ≥ {_fmt_cap(mbs_cap)}/w",
                 "provenance": {
                     "series": ["WSHOSHO", "WSHOMCB"],
                     "fetched_at": max(ust_latest.get("fetched_at"), mbs_latest.get("fetched_at")) if ust_latest.get("fetched_at") and mbs_latest.get("fetched_at") else (ust_latest.get("fetched_at") or mbs_latest.get("fetched_at")),
+                    "qt_caps": {
+                        "effective_date": cap.effective_date,
+                        "ust_cap_usd_week": ust_cap,
+                        "mbs_cap_usd_week": mbs_cap,
+                    },
                 },
             }
             return result, float(status)
@@ -590,6 +609,25 @@ def compute_indicator_status(db: Session, reg: IndicatorRegistry, as_of: datetim
         }
         return result, float(status)
 
+    # Helper: derive the measurement window for the value (not the z lookback)
+    def _derive_measurement_window() -> str | None:
+        import re
+        trig = reg.trigger_default or ""
+        # Prefer explicit "/<token>" suffixes (e.g., "/w", "/5d", "/2w")
+        m = re.search(r"/\s*([0-9]+[dw]|[dw])\b", trig, re.IGNORECASE)
+        if m:
+            return m.group(1).lower()
+        # Also accept phrases like "over 5d" or "over 2w"
+        m = re.search(r"over\s+([0-9]+[dw])\b", trig, re.IGNORECASE)
+        if m:
+            return m.group(1).lower()
+        # Fallback from cadence
+        cad = (reg.cadence or "").lower()
+        if cad == "weekly":
+            return "w"
+        # For daily/level/sched/weekly_daily leave unspecified to avoid confusion
+        return None
+
     # Compute z for the latest point(s) for z-scored indicators
     z = compute_z_from_points(points, window=20)
     status = 0
@@ -632,11 +670,14 @@ def compute_indicator_status(db: Session, reg: IndicatorRegistry, as_of: datetim
 
     status_str = "+1" if status > 0 else ("-1" if status < 0 else "0")
     latest = points[-1] if points else None
-    value = float(latest["value_numeric"]) if latest else None
+    # Use scaled value where applicable for single-series; composite points have no scale
+    value = _usd_value(latest) if latest else None
+    measurement_window = _derive_measurement_window()
     result = {
         "id": reg.indicator_id,
         "value_numeric": value,
-        "window": "20d",
+        # window reflects the measurement window, not the z lookback
+        "window": measurement_window,
         "z20": z,
         "status": status_str,
         "flip_trigger": reg.trigger_default or "",
@@ -650,6 +691,8 @@ def compute_indicator_status(db: Session, reg: IndicatorRegistry, as_of: datetim
             "source": latest.get("source") if latest else None,
             "source_url": latest.get("source_url") if latest else None,
             "inputs": latest.get("inputs") if latest else None,
+            # record z lookback for transparency
+            "z_window": 20,
         },
     }
     # Contribution used for weights later
@@ -739,9 +782,11 @@ def compute_snapshot(db: Session, horizon: str = "1w", k: int = 8, save: bool = 
         z_by_id[row["id"]] = abs(float(z)) if z is not None else 0.0
 
     reps: List[Dict[str, Any]] = []
+    representative_by_bucket: Dict[str, str] = {}
     for rid, members in members_by_bucket.items():
         # Pick member with largest |z|
         best_id = max(members, key=lambda mid: z_by_id.get(mid, 0.0))
+        representative_by_bucket[rid] = best_id
         reps.append(row_by_id[best_id])
 
     def z_abs(row: Dict[str, Any]) -> float:
@@ -750,17 +795,33 @@ def compute_snapshot(db: Session, horizon: str = "1w", k: int = 8, save: bool = 
 
     indicators_sorted = sorted(reps, key=z_abs, reverse=True)[:k]
 
-    # Build buckets section for response
-    buckets_resp: List[Dict[str, Any]] = []
+    # Build bucket_details section for response
+    bucket_details: List[Dict[str, Any]] = []
     for rid, agg in bucket_aggregate.items():
         root_reg = reg_by_id.get(rid)
         members = members_by_bucket.get(rid, [])
         agg_status = "+1" if agg > 0 else ("-1" if agg < 0 else "0")
-        buckets_resp.append(
+        rep_id = representative_by_bucket.get(rid)
+        member_objs: List[Dict[str, Any]] = []
+        for mid in members:
+            r = row_by_id.get(mid)
+            member_objs.append(
+                {
+                    "id": mid,
+                    "status": "+1" if contributions.get(mid, 0.0) > 0 else ("-1" if contributions.get(mid, 0.0) < 0 else "0"),
+                    "z20": (None if not r else r.get("z20")),
+                    "is_root": (mid == rid),
+                    "is_representative": (mid == rep_id),
+                }
+            )
+        bucket_details.append(
             {
-                "bucket": f"{root_reg.category}/{rid}" if root_reg else rid,
+                "bucket_id": rid,
+                "category": root_reg.category if root_reg else None,
+                "weight": WEIGHTS.get(root_reg.category, 0.0) if root_reg else 0.0,
                 "aggregate_status": agg_status,
-                "members": members,
+                "representative_id": rep_id,
+                "members": member_objs,
             }
         )
 
@@ -826,9 +887,10 @@ def compute_snapshot(db: Session, horizon: str = "1w", k: int = 8, save: bool = 
 
     return {
         "as_of": as_of_now.isoformat(),
-        "regime": {"label": label, "tilt": tilt, "score": score, "max_score": max_score},
+        "regime": {"label": label, "tilt": tilt, "score": score, "max_score": max_score, "score_cont": round(score_cont, 2)},
         "indicators": indicators_sorted,
-        "buckets": buckets_resp,
+        "bucket_details": bucket_details,
+        "bucket_weights": WEIGHTS,
         "frozen_inputs_id": frozen_id_str,
         "horizon": horizon,
     }

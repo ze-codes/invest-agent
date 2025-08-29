@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +43,7 @@ class Regime(BaseModel):
     tilt: Literal["positive", "negative", "flat"]
     score: int
     max_score: int
+    score_cont: Optional[float] = None
 
 
 class SnapshotIndicator(BaseModel):
@@ -55,12 +56,30 @@ class SnapshotIndicator(BaseModel):
     provenance: dict
 
 
+class BucketMember(BaseModel):
+    id: str
+    status: Literal["+1", "0", "-1"]
+    z20: Optional[float] = None
+    is_root: bool
+    is_representative: bool
+
+
+class BucketDetail(BaseModel):
+    bucket_id: str
+    category: Optional[str] = None
+    weight: float
+    aggregate_status: Literal["+1", "0", "-1"]
+    representative_id: Optional[str] = None
+    members: List[BucketMember]
+
+
 class SnapshotResponse(BaseModel):
     as_of: datetime
     horizon: Literal["1w", "2w", "1m"]
     regime: Regime
     indicators: List[SnapshotIndicator]
-    buckets: Optional[list] = None
+    bucket_details: Optional[List[BucketDetail]] = None
+    bucket_weights: Optional[Dict[str, float]] = None
     frozen_inputs_id: str
 
 
