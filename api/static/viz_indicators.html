@@ -63,48 +63,7 @@
     </style>
   </head>
   <body>
-    <div
-      id="top_nav"
-      style="
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 16px;
-        background: rgba(255, 255, 255, 0.9);
-        border-bottom: 1px solid #eee;
-        z-index: 9000;
-        backdrop-filter: saturate(120%) blur(6px);
-      "
-    >
-      <a
-        href="/static/viz_series.html"
-        style="
-          text-decoration: none;
-          color: #222;
-          font-weight: 600;
-          padding: 6px 10px;
-          border-radius: 6px;
-        "
-        >Data Series</a
-      >
-      <a
-        href="/static/viz_indicators.html"
-        aria-current="page"
-        style="
-          text-decoration: none;
-          color: #222;
-          font-weight: 600;
-          padding: 6px 10px;
-          border-radius: 6px;
-        "
-        >Indicators</a
-      >
-    </div>
+    <div id="top_nav"></div>
     <h2>Indicator Visualization</h2>
     <div id="controls">
       <form id="form">
@@ -635,5 +594,6 @@
       })();
     </script>
   </body>
+  <script src="/static/common_nav.js"></script>
   <script src="/static/chat_widget.js"></script>
 </html>

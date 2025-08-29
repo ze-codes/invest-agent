@@ -45,8 +45,8 @@
 
   function createStyles() {
     const css = `
-      .llm-widget{position:fixed;top:56px;right:0;bottom:0;width:380px;background:#fff;border-left:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden;z-index:9000}
-      .llm-header{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #eee;background:rgba(255,255,255,0.95)}
+      .llm-widget{position:fixed;top:0;right:0;bottom:0;width:380px;background:#fff;border-left:1px solid #ddd;display:flex;flex-direction:column;overflow:hidden;z-index:9000}
+      .llm-header{display:flex;align-items:center;justify-content:flex-start;height:48px;padding:0 12px;border-bottom:1px solid #eee;background:rgba(255,255,255,0.95)}
       .llm-header-title{font-weight:600;color:#222}
       .llm-body{display:flex;flex-direction:column;gap:8px;padding:8px 10px;overflow:auto}
       .llm-controls{display:flex;align-items:center;gap:8px}
