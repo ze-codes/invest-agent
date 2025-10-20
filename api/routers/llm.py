@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.settings import settings
 from app.llm import generate_brief
-from app.llm.orchestrator import agent_answer_question_events
+from app.llm.orchestrator import agent_answer_question_events, agent_answer_question_events_tools
 
 
 router = APIRouter()
@@ -31,7 +31,9 @@ def ask_stream(question: str, horizon: str = "1w", as_of: Optional[str] = None, 
 
     def _sse():
         try:
-            for ev in agent_answer_question_events(db, question=question, horizon=horizon, as_of=as_of):
+            use_tools = getattr(settings, "llm_use_tools", False)
+            gen = agent_answer_question_events_tools if use_tools else agent_answer_question_events
+            for ev in gen(db, question=question, horizon=horizon, as_of=as_of):
                 # SSE format: optional 'event:' then 'data:' line, blank line terminator
                 name = ev.get("event", "message")
                 payload = ev.get("data", {})

@@ -1,0 +1,138 @@
+[
+  {
+    "id": "def_ind_01",
+    "prompt": "what is bill share?",
+    "expected_tool_flow": ["get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": [
+      "Used get_doc for indicator definition.",
+      "Concise, aligned with registry; no invented numbers."
+    ]
+  },
+  {
+    "id": "def_series_02",
+    "prompt": "what is RRPONTSYD?",
+    "expected_tool_flow": ["get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": [
+      "Used get_doc for series definition.",
+      "Clear and faithful to docs."
+    ]
+  },
+  {
+    "id": "mixed_ind_03",
+    "prompt": "what is net_liq and its recent trend (last 15 days)?",
+    "expected_tool_flow": ["get_doc", "get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "FINAL"],
+    "verdict": "partial",
+    "notes": [
+      "Skipped get_doc for a mixed (definition + trend) query.",
+      "History used native weekly cadence; content reasonable."
+    ],
+    "suggested_fix": "In step prompt, require get_doc before get_history when the question asks 'what is X and ... trend'."
+  },
+  {
+    "id": "mixed_series_04",
+    "prompt": "what is TGA and its recent trend (last 15 days)?",
+    "expected_tool_flow": ["get_doc", "get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "FINAL"],
+    "verdict": "partial",
+    "notes": [
+      "Skipped get_doc for series mixed query.",
+      "History data correct (daily)."
+    ],
+    "suggested_fix": "Same as above: enforce doc then history for mixed prompts."
+  },
+  {
+    "id": "trend_ind_05",
+    "prompt": "show recent trend of sofr_iorb (last 15 days)",
+    "expected_tool_flow": ["get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "FINAL"],
+    "verdict": "pass",
+    "notes": [
+      "Correct: trend-only used get_history.",
+      "Values returned for requested window via weekly cadence."
+    ]
+  },
+  {
+    "id": "trend_series_06",
+    "prompt": "show recent trend of RESPPLLOPNWW (last 15 days)",
+    "expected_tool_flow": ["get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "FINAL"],
+    "verdict": "partial",
+    "notes": [
+      "Series path ignores days and uses limit; returned ~20 weekly points spanning months.",
+      "Answer lists many older dates; window mismatch vs 'last 15 days'."
+    ],
+    "suggested_fix": "Map days->limit for series by cadence (e.g., weekly ~ ceil(days/7))."
+  },
+  {
+    "id": "multi_def_07",
+    "prompt": "what is bill share and what is sofr iorb?",
+    "expected_tool_flow": ["get_doc", "get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": [
+      "Handled two definitional items with two get_doc calls, then FINAL."
+    ]
+  },
+  {
+    "id": "multi_trend_08",
+    "prompt": "show recent trend of net_liq and ofr_liq_idx (last 15 days)",
+    "expected_tool_flow": ["get_history", "get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "get_history", "FINAL"],
+    "verdict": "pass",
+    "notes": ["Both trends retrieved; cadence notes present."]
+  },
+  {
+    "id": "edge_typo_09",
+    "prompt": "what is WSHOMC?",
+    "expected_tool_flow": ["get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": ["Typos resolved to WSHOMCB; used get_doc once and finalized."]
+  },
+  {
+    "id": "edge_ambig_10",
+    "prompt": "show trend of reserves (last 15 days)",
+    "expected_tool_flow": ["get_history", "FINAL"],
+    "observed_tool_flow": ["get_history", "FINAL"],
+    "verdict": "pass",
+    "notes": ["Resolved ambiguous token to indicator reserves_w; acceptable."]
+  },
+  {
+    "id": "def_ind_11",
+    "prompt": "what is ust_net_w?",
+    "expected_tool_flow": ["get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": ["Used get_doc; definition aligns to registry."]
+  },
+  {
+    "id": "def_series_12",
+    "prompt": "what is DTB4WK?",
+    "expected_tool_flow": ["get_doc", "FINAL"],
+    "observed_tool_flow": ["get_doc", "FINAL"],
+    "verdict": "pass",
+    "notes": ["Used get_doc; concise and correct."]
+  },
+  {
+    "overall": {
+      "total": 12,
+      "pass": 9,
+      "partial": 3,
+      "fail": 0,
+      "tooling_observations": [
+        "Unified tools (get_doc/get_history) used consistently.",
+        "Native cadence selection works; notes included when retrying cadence.",
+        "Series history currently ignores 'days' and uses a point limit, causing window mismatch."
+      ],
+      "action_items": [
+        "Prompt: Explicitly require get_doc before get_history for mixed 'what is X and trend' queries.",
+        "Backend: For series history, translate days to limit using series_registry cadence (or accept days directly)."
+      ]
+    }
+  }
+]

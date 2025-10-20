@@ -1,0 +1,140 @@
+# Series registry metadata — source of truth for series cadence/units/scale/source
+# Use with: python -m app.registry_loader series_registry.yaml
+---
+series_registry:
+  WALCL:
+    {
+      cadence: weekly,
+      units: USD,
+      scale: 1e6,
+      source: FRED/H.4.1,
+      notes: "Fed total assets",
+    }
+  RESPPLLOPNWW:
+    {
+      cadence: weekly,
+      units: USD,
+      scale: 1e6,
+      source: H.4.1,
+      notes: "Reserve balances",
+    }
+  RRPONTSYD:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1e6,
+      source: FRED/ON RRP,
+      notes: "ON RRP outstanding",
+    }
+  TGA:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1e6,
+      source: DTS,
+      notes: "Treasury General Account",
+    }
+  SOFR:
+    {
+      cadence: daily,
+      units: percent,
+      scale: 1.0,
+      source: SOFR,
+      notes: "repo benchmark",
+    }
+  IORB:
+    {
+      cadence: daily,
+      units: percent,
+      scale: 1.0,
+      source: Fed admin,
+      notes: "stepwise",
+    }
+  RRP_RATE:
+    {
+      cadence: daily,
+      units: percent,
+      scale: 1.0,
+      source: Fed admin,
+      notes: "stepwise",
+    }
+  DTB3:
+    {
+      cadence: daily,
+      units: percent,
+      scale: 1.0,
+      source: Treasury,
+      notes: "3m bill",
+    }
+  DTB4WK:
+    {
+      cadence: daily,
+      units: percent,
+      scale: 1.0,
+      source: Treasury,
+      notes: "4w bill",
+    }
+  WSHOSHO:
+    {
+      cadence: weekly,
+      units: USD,
+      scale: 1e6,
+      source: H.4.1,
+      notes: "UST holdings",
+    }
+  WSHOMCB:
+    {
+      cadence: weekly,
+      units: USD,
+      scale: 1e6,
+      source: H.4.1,
+      notes: "MBS holdings",
+    }
+  UST_AUCTION_OFFERINGS:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1.0,
+      source: DTS,
+      notes: "sum by auction_date",
+    }
+  UST_AUCTION_ISSUES:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1.0,
+      source: DTS,
+      notes: "sum by issue_date",
+    }
+  UST_REDEMPTIONS:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1.0,
+      source: DTS,
+      notes: "marketable + savings only",
+    }
+  UST_INTEREST:
+    {
+      cadence: daily,
+      units: USD,
+      scale: 1.0,
+      source: DTS,
+      notes: "interest/coupon outlays",
+    }
+  UST_NET_SETTLE_W:
+    {
+      cadence: weekly,
+      units: USD,
+      scale: 1.0,
+      source: DERIVED,
+      notes: "issues - redemptions - interest",
+    }
+  OFR_LIQ_IDX:
+    {
+      cadence: daily,
+      units: index,
+      scale: 1.0,
+      source: OFR,
+      notes: "UST liquidity stress",
+    }

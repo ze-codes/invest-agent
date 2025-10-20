@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     llm_base_url: str | None = None
     llm_agent: bool = True  # enable agentic tool use for /llm/ask
+    llm_use_tools: bool = True  # use OpenRouter function-calling loop
 
     class Config:
         env_file = ".env"

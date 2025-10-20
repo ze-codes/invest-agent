@@ -1,0 +1,14 @@
+
+{"id":"def_ind_01","prompt":"what is bill share?","type":"def"}
+{"id":"def_series_02","prompt":"what is RRPONTSYD?","type":"def"}
+{"id":"mixed_ind_03","prompt":"what is net_liq and its recent trend (last 15 days)?","type":"mixed","days":15}
+{"id":"mixed_series_04","prompt":"what is TGA and its recent trend (last 15 days)?","type":"mixed","days":15}
+{"id":"trend_ind_05","prompt":"show recent trend of sofr_iorb (last 15 days)","type":"trend","days":15}
+{"id":"trend_series_06","prompt":"show recent trend of RESPPLLOPNWW (last 15 days)","type":"trend","days":15}
+{"id":"multi_def_07","prompt":"what is bill share and what is sofr iorb?","type":"multi"}
+{"id":"multi_trend_08","prompt":"show recent trend of net_liq and ofr_liq_idx (last 15 days)","type":"multi","days":15}
+{"id":"edge_typo_09","prompt":"what is WSHOMC?","type":"edge","notes":"typo; expect WSHOMCB"}
+{"id":"edge_ambig_10","prompt":"show trend of reserves (last 15 days)","type":"edge","days":15,"notes":"ambiguous vs series RESPPLLOPNWW"}
+{"id":"def_ind_11","prompt":"what is ust_net_w?","type":"def"}
+{"id":"def_series_12","prompt":"what is DTB4WK?","type":"def"}
+

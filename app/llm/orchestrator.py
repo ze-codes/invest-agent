@@ -446,17 +446,14 @@ def _tool_catalog_description() -> str:
         "Tools available:\n"
         "- get_snapshot(horizon, k?): Returns current snapshot JSON.\n"
         "- get_router(horizon, k?): Returns router picks JSON.\n"
-        "- get_indicator_history(indicator_id, horizon, days?): Returns recent indicator data.\n"
-        "- get_series_history(series_id, limit?): Returns recent series data.\n"
-        "- Documentation tools (use when user asks what a thing means, such as 'what is reserves_w'):\n"
-        "  - get_indicator_doc(id): Returns an indicator's documentation, good for when a user asks about an indicator.\n"
-        "    - Example: TOOL get_indicator_doc {\"id\":\"net_liq\"}\n"
-        "  - get_series_doc(id): Returns a series' documentation, good for when a user asks about a series.\n"
-        "    - Example: TOOL get_series_doc {\"id\":\"TGA\"}\n"
+        "- get_doc(id): Return documentation for an indicator (preferred) or a series by ID.\n"
+        "  Example: TOOL get_doc {\"id\":\"net_liq\"}\n"
+        "- get_history(id, days?, limit?): Return recent history for an indicator or series by ID.\n"
+        "  Server will use native cadence automatically; you do not need to specify one.\n"
+        "  Example: TOOL get_history {\"id\":\"bill_share\",\"days\":90}\n"
         "Rules: Do NOT call the same tool with identical args twice.\n"
         "Rules: If a documentation tool call returns empty content, respond FINAL and answer with ONLY the requested ID to indicate you don't know.\n"
         "Rules: Tool arguments MUST be a single valid JSON object. Do not use quotes around keys incorrectly; use double quotes.\n"
-        "Example: TOOL get_indicator_history {\"indicator_id\":\"reserves_w\",\"horizon\":\"1w\",\"days\":90}\n"
         "Decide which tool to call (or none).\n"
         "Respond with either 'TOOL <name> <args_json>' or 'FINAL <answer_text>'."
     )
@@ -497,6 +494,50 @@ def _execute_tool(db: Session, name: str, args: Dict[str, Any]) -> Dict[str, Any
         if name == "get_series_doc":
             sid = args["id"]
             return get_series_doc(sid)
+        if name == "get_doc":
+            # Unified doc: prefer indicator match; fall back to series
+            oid = args.get("id")
+            doc = get_indicator_doc(oid)
+            if not doc:
+                return get_series_doc(oid)
+            return doc
+        if name == "get_history":
+            # Unified history: server chooses native cadence; prefer indicator, retry opposite cadence once.
+            oid = args.get("id")
+            days = int(args.get("days", 90))
+            limit = int(args.get("limit", 20))
+            try:
+                ind = db.get(IndicatorRegistry, oid)
+            except Exception:
+                ind = None
+
+            # Indicator path
+            if ind is not None:
+                try:
+                    native = (ind.cadence or "weekly").lower()
+                    hmap = {"weekly": "1w", "daily": "1d"}
+                    hh = hmap.get(native, "1w")
+                    val = _get_indicator_history(db, oid, horizon=hh, days=days, max_points=0)
+                    if val:
+                        return {"items": val, "cadence": native, "note": f"used native cadence: {native}"}
+                    # Retry with opposite cadence once
+                    alt_native = "daily" if native == "weekly" else "weekly"
+                    alt_hh = hmap.get(alt_native, "1d" if hh == "1w" else "1w")
+                    alt_val = _get_indicator_history(db, oid, horizon=alt_hh, days=days, max_points=0)
+                    if alt_val:
+                        return {"items": alt_val, "cadence": alt_native, "note": f"retried with {alt_native} due to no native data"}
+                    return {"items": [], "cadence": native, "note": "no data for indicator at native or alternate cadence"}
+                except Exception as e:
+                    return {"error": str(e)}
+
+            # Series path (only if not an indicator)
+            try:
+                from app.models import SeriesRegistry  # local import
+                sreg = db.get(SeriesRegistry, oid)
+                sval = _get_series_history(db, oid, limit=limit)
+                return {"items": sval, "cadence": (sreg.cadence if sreg else None) or "series"}
+            except Exception as e:
+                return {"error": str(e)}
         return {"error": f"unknown tool {name}"}
     except Exception as e:
         return {"error": str(e)}
@@ -587,7 +628,7 @@ def agent_answer_question_events(
                             messages.append({
                                 "role": "assistant",
                                 "content": (
-                                    "You already have the requested data. Respond as FINAL with a concise answer now."
+                                    "ToolResult is already available for this request. You MUST respond as FINAL now with a concise 1–2 sentence definition (what it is + why it matters). Do NOT call more tools."
                                 ),
                             })
                             # Move to next decision step
@@ -605,7 +646,7 @@ def agent_answer_question_events(
                         messages.append({
                             "role": "assistant",
                             "content": (
-                                "You now have the requested data. Respond as FINAL with a concise answer now."
+                                "You now have the requested documentation. Respond as FINAL with a concise 1–2 sentence definition (what it is + why it matters). Do NOT include numbers unless quoted from the documentation."
                             ),
                         })
                         # Move to next decision step
@@ -652,5 +693,202 @@ def agent_answer_question_events(
             break
 
     if not answer_text:
+        # Fallback: try to synthesize a minimal answer from the last documentation ToolResult if present
+        try:
+            last = tool_trace[-1] if tool_trace else None
+            if isinstance(last, dict):
+                # tool_result may be a dict or summary string per earlier capture logic
+                res = last.get("result") or last.get("tool_result")
+                snippet = None
+                if isinstance(res, dict):
+                    # Prefer 'title'/'what' fields if it's a series doc; else fall back
+                    title = res.get("title")
+                    what = res.get("what")
+                    why = res.get("why")
+                    if title and what:
+                        snippet = f"{title}. What it is: {what}"
+                    elif why:
+                        snippet = why
+                elif isinstance(res, str):
+                    snippet = res.split("\n", 1)[0][:220]
+                if snippet:
+                    answer_text = _redact_pii(snippet)
+        except Exception:
+            pass
+    if not answer_text:
         answer_text = "I don't know based on the available tools."
     yield {"event": "final", "data": {"answer": _redact_pii(answer_text), "tool_trace": tool_trace}}
+
+
+# ------------------------
+# OpenRouter-native function-calling loop (new; gated by settings.llm_use_tools)
+# ------------------------
+def _build_tool_specs() -> list[dict[str, Any]]:
+    # Provide unified tools to simplify model choices
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_doc",
+                "description": "Return documentation for an indicator or a series by ID. Prefer indicator if ID matches both.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_history",
+                "description": "Return recent history for an indicator (preferred) or series by ID. Server selects native cadence; provide optional days (indicator) or limit (series).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "days": {"type": "integer"},
+                        "limit": {"type": "integer"}
+                    },
+                    "required": ["id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_snapshot",
+                "description": "Return current snapshot JSON for a given horizon.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "horizon": {"type": "string"},
+                        "k": {"type": "integer"},
+                    },
+                    "required": ["horizon"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_router",
+                "description": "Return router picks JSON for a given horizon.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "horizon": {"type": "string"},
+                        "k": {"type": "integer"},
+                    },
+                    "required": ["horizon"],
+                },
+            },
+        },
+    ]
+
+
+def agent_answer_question_events_tools(
+    db: Session, question: str, horizon: str = "1w", as_of: Optional[str] = None
+):
+    """OpenRouter function-calling agent loop (SSE-friendly)."""
+    # Build system context with KnownIDs and brief (as guidance)
+    brief_md = _get_cached_brief(db, horizon=horizon, as_of=as_of, k=6)
+    cached = _get_cached_snapshot(horizon)
+    snap = cached.get("snapshot") if cached else None
+
+    known = _collect_known_ids(db)
+    known_ids_context = (
+        "KnownIDs:\n"
+        + "indicators=" + ",".join(known.get("indicator_ids", [])[:200]) + "\n"
+        + "series=" + ",".join(known.get("series_ids", [])[:400])
+    )
+    system = build_agent_system_prompt(known_ids_context, "")
+
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system}]
+    if brief_md:
+        messages.append({
+            "role": "system",
+            "content": (
+                "BriefContext (align with this; prefer this if conflict):\n" + brief_md
+            ),
+        })
+    messages.append({"role": "user", "content": question})
+
+    # SSE: start event
+    start_payload: Dict[str, Any] = {"horizon": horizon}
+    try:
+        if isinstance(snap, dict):
+            start_payload.update({"as_of": snap.get("as_of"), "regime": snap.get("regime")})
+    except Exception:
+        pass
+    yield {"event": "start", "data": start_payload}
+
+    # Prepare OpenRouter client
+    try:
+        from openai import OpenAI  # type: ignore
+    except Exception as e:
+        yield {"event": "error", "data": {"message": "openai package not installed"}}
+        return
+    api_key = settings.openrouter_api_key or settings.llm_api_key
+    base_url = settings.llm_base_url or "https://openrouter.ai/api/v1"
+    model = settings.llm_model or "openai/gpt-4o-mini"
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
+    tools = _build_tool_specs()
+    tool_trace: List[Dict[str, Any]] = []
+
+    # Up to N tool/think iterations
+    for _ in range(6):
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            parallel_tool_calls=False,
+            temperature=0.2,
+        )
+        msg = resp.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            # Append assistant message with tool_calls to keep full context
+            messages.append(msg.dict())  # type: ignore
+            # Execute tool calls sequentially
+            for tc in tool_calls:
+                try:
+                    name = tc.function.name
+                    args_json = tc.function.arguments or "{}"
+                    import json as _json
+                    args = _json.loads(args_json)
+                except Exception:
+                    name = getattr(tc.function, "name", "")
+                    args = {}
+                yield {"event": "decision", "data": {"type": "tool", "name": name}}
+                yield {"event": "tool_call", "data": {"name": name, "args": args}}
+                result = _execute_tool(db, name, args)
+                tool_trace.append({"tool": name, "args": args, "result": result})
+                try:
+                    import json as _json
+                    brief = _json.dumps(result, default=str)
+                except Exception:
+                    brief = str(result)
+                yield {"event": "tool_result", "data": {"name": name, "summary": brief}}
+                # Append tool result message
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": brief,
+                })
+            # Continue loop for next LLM turn
+            continue
+        # No tool calls → final answer
+        content = msg.content or ""
+        if content:
+            # Optionally stream tokens; here we emit one-shot
+            yield {"event": "decision", "data": {"type": "final"}}
+            yield {"event": "final", "data": {"answer": _redact_pii(content), "tool_trace": tool_trace}}
+            return
+        # Empty content; bail out
+        break
+
+    # Fallback
+    yield {"event": "final", "data": {"answer": "I don't know based on the available tools.", "tool_trace": tool_trace}}

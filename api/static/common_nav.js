@@ -44,16 +44,16 @@
     nav.innerHTML = "";
     nav.appendChild(
       link(
-        "/static/viz_series.html",
-        "Data Series",
-        path.endsWith("/viz_series.html")
+        "/static/viz_indicators.html",
+        "Indicators",
+        path.endsWith("/viz_indicators.html")
       )
     );
     nav.appendChild(
       link(
-        "/static/viz_indicators.html",
-        "Indicators",
-        path.endsWith("/viz_indicators.html")
+        "/static/viz_series.html",
+        "Data Series",
+        path.endsWith("/viz_series.html")
       )
     );
   }

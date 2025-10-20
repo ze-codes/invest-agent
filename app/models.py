@@ -45,6 +45,17 @@ class SeriesVintage(Base):
     )
 
 
+class SeriesRegistry(Base):
+    __tablename__ = "series_registry"
+
+    series_id = Column(String, primary_key=True)
+    cadence = Column(String, nullable=True)
+    units = Column(String, nullable=True)
+    scale = Column(Numeric, nullable=True)
+    source = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+
+
 class IndicatorRegistry(Base):
     __tablename__ = "indicator_registry"
 
